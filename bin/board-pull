@@ -81,7 +81,7 @@ mkdir -p .tasks
 
 # Build base query args (without label)
 base_args=("--repo" "$REPO" "--state" "open" "--json" "number,title,labels,url,assignees,state,updatedAt,body" "--limit" "1000")
-extra_args=()
+declare -a extra_args=()
 if [[ -n "$ASSIGNEE" ]]; then
   extra_args+=("--assignee" "$ASSIGNEE")
 fi
@@ -106,7 +106,7 @@ if [[ ${#trimmed_labels[@]} -le 1 ]]; then
   if [[ -n "${trimmed_labels[0]:-}" ]]; then
     query_args+=("--label" "${trimmed_labels[0]}")
   fi
-  query_args+=("${extra_args[@]}")
+  query_args+=(${extra_args[@]+"${extra_args[@]}"})
 
   issues_json=$(gh issue list "${query_args[@]}" 2>"$stderr_tmp") || {
     cat "$stderr_tmp" >&2
@@ -119,7 +119,7 @@ else
   results=()
   for lbl in "${trimmed_labels[@]}"; do
     query_args=("${base_args[@]}" "--label" "$lbl")
-    query_args+=("${extra_args[@]}")
+    query_args+=(${extra_args[@]+"${extra_args[@]}"})
     result=$(gh issue list "${query_args[@]}" 2>"$stderr_tmp") || {
       cat "$stderr_tmp" >&2
       rm -f "$stderr_tmp"
