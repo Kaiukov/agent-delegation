@@ -3,6 +3,9 @@
   "owner": {
     "name": "Kaiukov"
   },
+  "metadata": {
+    "description": "Personal tooling marketplace — Claude Code plugins for GitHub-issue-driven task boards and cmux orchestration."
+  },
   "plugins": [
     {
       "name": "cmux-todo-board",
