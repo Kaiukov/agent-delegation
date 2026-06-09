@@ -36,6 +36,8 @@ cmux rename-tab "<label>"
 cmux send -- "<work prompt>"
 ```
 
+- Dispatch/spec files MUST live inside the agent worktree (e.g. `<worktree>/.task-spec.md`), never `/tmp` or external dirs, to avoid 'Access external directory' permission prompts.
+
 ## Verification (hard gate)
 
 Never trust an agent's self-report. Run the project's tests **and**
