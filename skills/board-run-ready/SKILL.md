@@ -41,6 +41,14 @@ cmux send -- "<work prompt>"
 Never trust an agent's self-report. Run the project's tests **and**
 `claude plugin validate .`. Both must pass before marking `completed`.
 
+## Completion notification flow
+
+- **PRIMARY:** Event-driven signal from the dispatched agent back to the
+  orchestrator. The signal MUST carry: issue number, pane/surface ref,
+  success vs failure, and branch name if pushed.
+- **FALLBACK:** `poll-push.sh` (branch polling). A missed event never strands
+  a task; the fallback catches completions the signal missed.
+
 ## MVP note
 
 Status is NOT written back to GitHub labels. That is #5 sync-back.
