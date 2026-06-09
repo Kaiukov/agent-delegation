@@ -14,9 +14,13 @@ the other board skills — the essentials are inlined below.
 
 You **coordinate**, you do not implement.
 
-- **Delegate ALL coding to cmux agents.** You do not write feature code yourself.
-  You spawn agents in isolated git worktrees, dispatch tasks, then independently
-  verify and merge.
+- **Delegate ALL coding to cmux agents.** You do not write code, tests, config,
+  or JSON/data edits yourself. The orchestrator keeps only:
+  orchestration (plan/dispatch/track), independent verification (the hard gate),
+  and live/prod operations.
+  **Single exception:** write code yourself ONLY when the user explicitly asks
+  you to. Absent an explicit request, always delegate; a hand-edit without such
+  a request is a rule violation.
 - **Never merge on an agent's self-report.** Run the hard gate yourself (the
   project's tests + `claude plugin validate .` / typecheck) before merging.
   Mocks pass while live breaks — always do the real check.
