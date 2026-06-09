@@ -62,8 +62,9 @@ For each task you actually execute, run the orchestrator loop:
 
 1. **Worktree** off `origin/main` (sibling dir, carries `.env`).
 2. **Spawn** an agent (opencode or codex) in that worktree.
-3. **Dispatch** the task spec (keep the spec INSIDE the worktree to avoid
-   external-dir permission prompts).
+3. **Dispatch** the task spec — MUST live inside the agent worktree (e.g.
+   `<worktree>/.task-spec.md`), never `/tmp` or external dirs, to avoid
+   'Access external directory' permission prompts.
 4. **Poll** origin until the branch is pushed (run the poll in the background).
 5. **Verify independently** — the hard gate: run the project's tests +
    validation yourself. Do not trust the agent's word.
