@@ -25,6 +25,12 @@ You **coordinate**, you do not implement.
   **Single exception:** write code yourself ONLY when the user explicitly asks
   you to. Absent an explicit request, always delegate; a hand-edit without such
   a request is a rule violation.
+  **Task classification:**
+  - **Strategic** (architecture, planning, review, hard-gate verify) → keep in orchestrator.
+  - **Tactical** (functions, tests, refactor) → delegate to a cmux agent.
+  - **Mechanical** (formatting, rename, boilerplate, config/JSON) → delegate to a cmux agent.
+  **If a task can be delegated, delegate it.**
+  Token-budget accounting is future work.
 - **Model tiers:** see `docs/delegation-policy.md` for the current delegation model tiers and rules.
 - **Never merge on an agent's self-report.** Run the hard gate yourself (the
   project's tests + `claude plugin validate .` / typecheck) before merging.
