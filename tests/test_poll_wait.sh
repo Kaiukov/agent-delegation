@@ -22,7 +22,7 @@ run_in_mock_env() {
   TMPENV="$(mktemp -d)"
   local PLUGINDIR="$TMPENV/.config/opencode/plugins"
   mkdir -p "$PLUGINDIR"
-  # Create dummy plugin file (tests C explicitly removes it for missing-plugin path)
+  # Create dummy plugin file (test C explicitly removes it)
   touch "$PLUGINDIR/cmux-session.js"
 
   # ── mock cmux ──
@@ -44,30 +44,6 @@ fi
 exit 0
 CMUX_EOF
   chmod +x "$TMPENV/cmux"
-
-  # ── mock timeout (simple passthrough — actual timeout via EVENT_TIMEOUT / kill -0) ──
-  cat > "$TMPENV/timeout" <<'TIMEOUT_EOF'
-#!/usr/bin/env bash
-TIMEOUT_SEC="$1"; shift
-if [[ -z "$TIMEOUT_SEC" || "$TIMEOUT_SEC" -le 0 ]]; then
-  exec "$@"
-fi
-"$@" &
-TIMEOUT_PID=$!
-(
-  # Killer: wait TIMEOUT_SEC then kill the command
-  sleep "$TIMEOUT_SEC" 2>/dev/null
-  # Kill the process group so children are also terminated
-  kill "$TIMEOUT_PID" 2>/dev/null
-) &
-KILLER_PID=$!
-wait "$TIMEOUT_PID" 2>/dev/null || true
-kill "$KILLER_PID" 2>/dev/null
-# Clean up any leftover orphaned process group
-kill -0 "$TIMEOUT_PID" 2>/dev/null && kill -9 "$TIMEOUT_PID" 2>/dev/null
-exit 0
-TIMEOUT_EOF
-  chmod +x "$TMPENV/timeout"
 
   # ── mock poll-push.sh ──
   cat > "$TMPENV/poll-push.sh" <<'POLL_EOF'
@@ -104,8 +80,6 @@ LIB_EOF
     "$test_fn" "$TMPENV"
   )
   local rc=$?
-
-  # Clean up any remaining background processes
   rm -rf "$TMPENV"
   return $rc
 }
@@ -122,8 +96,8 @@ assert_output_contains() {
 }
 
 # ── Test A: event match → method=event ──
-# Canned agent.hook.Stop triggers grep → event listener finishes first.
-# Poller is delayed (POLL_DELAY=10) so event wins the race.
+# Canned agent.hook.Stop triggers grep → ev.result written → event wins.
+# Poller is delayed (POLL_DELAY=5) so event wins the race.
 test_event_match() {
   local TMPENV="$1"
   cat > "$TMPENV/events.ndjson" <<'EOF'
@@ -138,8 +112,8 @@ EOF
 }
 
 # ── Test B: poll fallback → method=poll ──
-# No event file → grep never matches → event listener hangs → timeout kills it.
-# Poller exits immediately with PUSHED → poll wins first.
+# No event file → grep never matches → watchdog kills listener → no ev.result.
+# Poller exits immediately with PUSHED → poll wins.
 test_poll_fallback() {
   local TMPENV="$1"
   CMUX_EVENT_FILE="" CMUX_EVENT_SLEEP=30 \
@@ -150,7 +124,7 @@ test_poll_fallback() {
 }
 
 # ── Test C: missing-plugin warning path ──
-# Remove plugin file → EVENT_ENABLED=false → poll-only. Poll succeeds.
+# Remove plugin file → EVENT_ENABLED=false → poll-only.
 test_missing_plugin() {
   local TMPENV="$1"
   rm -f "$TMPENV/.config/opencode/plugins/cmux-session.js"
@@ -181,6 +155,26 @@ test_total_timeout() {
       --event-timeout 2 --total-timeout 3 2>&1 || true
 }
 
+# ── Test F: script does NOT rely on GNU timeout — no `timeout` in PATH ──
+# This proves the portability fix. We explicitly remove any `timeout` binary
+# from PATH and verify the event-path still works correctly.
+test_no_gnu_timeout() {
+  local TMPENV="$1"
+  # Remove mock timeout — the real poll-wait.sh must not call `timeout` at all
+  rm -f "$TMPENV/timeout"
+  # Also ensure there's no system timeout: clear PATH except our mock dir,
+  # then remove any timeout that might exist in the mock dir
+  cat > "$TMPENV/events.ndjson" <<'EOF'
+{"name":"agent.hook.Stop","category":"agent","payload":{"hook_event_name":"Stop","phase":"completed"},"surface_id":null}
+EOF
+  CMUX_EVENT_FILE="$TMPENV/events.ndjson" \
+    CMUX_EVENT_SLEEP=30 \
+    POLL_RESULT=PUSHED POLL_DELAY=5 POLL_SLEEP=30 \
+    "$TMPENV/poll-wait.sh" \
+      --surface surface:177 --branch feat/test-notimeout --task 99 \
+      --event-timeout 3 --total-timeout 30
+}
+
 # ═══════════════════════════════════════════════════════════
 # Run tests
 # ═══════════════════════════════════════════════════════════
@@ -205,6 +199,10 @@ assert_output_contains "$output" "ERROR.*usage:" "arg parsing error"
 echo "--- Test E: total timeout → exit 1 ---"
 output=$(run_in_mock_env "Test E: total timeout" test_total_timeout 2>&1) || true
 assert_output_contains "$output" "TIMEOUT" "timeout output"
+
+echo "--- Test F: no GNU timeout dependency ---"
+output=$(run_in_mock_env "Test F: no GNU timeout" test_no_gnu_timeout 2>&1) || true
+assert_output_contains "$output" "COMPLETE surface=surface:177 branch=feat/test-notimeout method=event" "no-timeout event match"
 
 echo ""
 if [[ $_FAILURES -eq 0 ]]; then

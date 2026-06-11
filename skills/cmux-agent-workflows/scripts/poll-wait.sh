@@ -7,13 +7,16 @@
 #
 # How it works:
 #   1. Start cmux events | grep in background (blocks on kernel events, no CPU).
-#   2. Start poll-push.sh in background (sleeps 60s between polls).
-#   3. Poll both with kill -0 at 1s intervals. First to finish wins.
-#   4. On event match: kill poller, report COMPLETE method=event.
-#   5. On poll push: kill event listener, report COMPLETE method=poll.
-#   6. On total timeout: kill both, report TIMEOUT.
+#   2. Start a watchdog (sleep + kill) for the event listener.
+#   3. Start poll-push.sh in background (sleeps 60s between polls).
+#   4. Poll with kill -0 at 1s intervals. First to finish wins.
+#      - Event match: grep writes to ev.result → method=event.
+#      - Watchdog kill: no ev.result written → continue waiting for poll.
+#      - Poll push: poll.out has PUSHED → method=poll.
+#   5. On total timeout: kill all, report TIMEOUT.
 #
-# Compatibility: macOS bash 3.2 (no `wait -n`, no arrays, no `read -t`).
+# Compatibility: macOS bash 3.2 (no `wait -n`, no `timeout`, no `read -t`).
+# Uses a bash-native watchdog instead of GNU timeout.
 #
 # UNVERIFIED: event names and payload shapes. The grep patterns below are built
 # against shapes documented in WAIT_WITHOUT_SLEEP.md and the cmux audit log
@@ -49,10 +52,10 @@ done
 
 SURF_NUM="${SURFACE#surface:}"
 PLUGIN_FILE="$HOME/.config/opencode/plugins/cmux-session.js"
-EVENT_PID=""; POLL_PID=""
+EVENT_PID=""; WATCHDOG_PID=""; POLL_PID=""
 METHOD=""; SUCCESS=1
 TMPDIR="$(mktemp -d)"
-trap 'kill $EVENT_PID $POLL_PID 2>/dev/null; rm -rf "$TMPDIR"' EXIT
+trap 'kill $EVENT_PID $WATCHDOG_PID $POLL_PID 2>/dev/null; rm -rf "$TMPDIR"' EXIT
 
 # ── graceful degradation check (design §5.6) ──
 EVENT_ENABLED=false
@@ -67,26 +70,50 @@ else
 fi
 
 # ── background event listener (design §3.2 step 1) ──
+# Bash-native watchdog replaces GNU timeout. The event listener writes a result
+# file on grep match; the watchdog only kills the process — NO result file means
+# the listener was killed by timeout, so we fall through to the poll path.
 if $EVENT_ENABLED; then
   # UNVERIFIED: grep pattern covers both lifecycle idle (WAIT_WITHOUT_SLEEP.md)
   # and agent.hook.Stop (observed in audit log). CTB-DONE may appear in
   # notification bodies in the live stream even though they are redacted in
   # the audit log.
-  timeout "$EVENT_TIMEOUT" bash -c "
-    cmux events --category agent --category notification --no-heartbeat \
-      | grep -m1 -E '(lifecycle.*idle|hook_event_name.*Stop|CTB-DONE.*task=)'
-  " 2>/dev/null &
+  (
+    cmux events --category agent --category notification --no-heartbeat 2>/dev/null \
+      | grep -m1 -E '(lifecycle.*idle|hook_event_name.*Stop|CTB-DONE.*task=)' \
+      > /dev/null 2>&1
+    echo "event" > "$TMPDIR/ev.result"
+  ) &
   EVENT_PID=$!
+
+  # Watchdog: kill the event listener after EVENT_TIMEOUT seconds.
+  # If grep already matched, the kill fails silently (process already dead).
+  (
+    sleep "$EVENT_TIMEOUT"
+    kill $EVENT_PID 2>/dev/null || true
+  ) &
+  WATCHDOG_PID=$!
 fi
 
 # ── background fallback poller (design §3.2 step 2) ──
 "$DIR/poll-push.sh" "$BRANCH" 60 "$TOTAL_TIMEOUT" > "$TMPDIR/poll.out" 2>&1 &
 POLL_PID=$!
 
-# ── wait loop: poll both PIDs until one finishes or total timeout expires ──
-# kill -0 checks process liveness without sending a signal.
+# ── wait loop: poll for the result file OR poller completion ──
+# ev.result is written ONLY on a real grep match — never on watchdog timeout.
+# This prevents the script from falsely reporting method=event when the event
+# listener is killed by the watchdog (or when the event listener's command
+# fails to start because cmux/other deps are missing).
 ELAPSED=0
 while (( ELAPSED < TOTAL_TIMEOUT )); do
+  # Check if event listener produced a result (real grep match)
+  if $EVENT_ENABLED && [[ -f "$TMPDIR/ev.result" ]]; then
+    kill $POLL_PID 2>/dev/null || true
+    METHOD=event
+    SUCCESS=0
+    break
+  fi
+
   # Check if poller finished (push detected or poll timeout)
   if ! kill -0 $POLL_PID 2>/dev/null; then
     if grep -q "^PUSHED " "$TMPDIR/poll.out" 2>/dev/null; then
@@ -104,14 +131,6 @@ while (( ELAPSED < TOTAL_TIMEOUT )); do
     # Poller failed but event listener may still succeed — reset poll PID
     # so we don't keep checking it, and keep waiting.
     POLL_PID=""
-  fi
-
-  # Check if event listener finished (grep matched)
-  if $EVENT_ENABLED && [[ -n "$EVENT_PID" ]] && ! kill -0 $EVENT_PID 2>/dev/null; then
-    kill $POLL_PID 2>/dev/null || true
-    METHOD=event
-    SUCCESS=0
-    break
   fi
 
   sleep 1
