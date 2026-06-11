@@ -94,7 +94,9 @@ hand-typing the steps: `wt-new.sh`, `agent-spawn.sh`,
 
 1. Detect the active repo: read `BOARD_REPO`, or ask the user `owner/repo`.
 2. If `./.tasks/board.json` is **absent**, run `/board-pull` first.
-3. Read `./.tasks/board.json`; summarize counts per status.
+3. Run `board-status --json --ready-tasks 5` to get counts and ready tasks
+   (compact JSON call instead of reading the full `board.json`). Keep full
+   `board.json` available for on-demand inspection.
 4. Run `/board-plan` to mirror `ready` items into the task list.
 5. Report: active repo, ready count, and the next action — then **await the
    user's go** before dispatching any work (`/board-run-ready`).
