@@ -78,11 +78,17 @@ if $EVENT_ENABLED; then
   # and agent.hook.Stop (observed in audit log). CTB-DONE may appear in
   # notification bodies in the live stream even though they are redacted in
   # the audit log.
+  # NOTE: set +o pipefail inside the subshell prevents the upstream cmux
+  # SIGPIPE (exit 141) from masking a successful grep match (exit 0).
+  # Without this, set -euo pipefail at the script level would abort the
+  # subshell before echo ever runs, making the event path silently dead.
   (
-    cmux events --category agent --category notification --no-heartbeat 2>/dev/null \
-      | grep -m1 -E '(lifecycle.*idle|hook_event_name.*Stop|CTB-DONE.*task=)' \
-      > /dev/null 2>&1
-    echo "event" > "$TMPDIR/ev.result"
+    set +o pipefail
+    if cmux events --category agent --category notification --no-heartbeat 2>/dev/null \
+         | grep -m1 -E '(lifecycle.*idle|hook_event_name.*Stop|CTB-DONE.*task=)' \
+         > /dev/null 2>&1; then
+      echo "event" > "$TMPDIR/ev.result"
+    fi
   ) &
   EVENT_PID=$!
 

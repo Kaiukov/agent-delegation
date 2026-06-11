@@ -175,6 +175,32 @@ EOF
       --event-timeout 3 --total-timeout 30
 }
 
+# ── Test G: continuously-streaming cmux → SIGPIPE on producer → ev.result IS written ──
+# Simulates the REAL cmux behavior: a long-lived event stream where grep -m1
+# closes the pipe → upstream cmux gets SIGPIPE (exit 141). With set -euo
+# pipefail this would abort the subshell before echo. The fix uses
+# set +o pipefail + if/then to ensure ev.result is written on grep match.
+test_streaming_sigpipe() {
+  local TMPENV="$1"
+  # Override cmux: continuously stream events (simulates real cmux events)
+  cat > "$TMPENV/cmux" <<'CMUX_STREAM'
+#!/usr/bin/env bash
+if [[ "$1" == "events" ]]; then
+  while true; do
+    echo '{"name":"agent.hook.Stop","category":"agent","payload":{"hook_event_name":"Stop","phase":"completed"},"surface_id":null}'
+    sleep 0.1
+  done
+fi
+exit 0
+CMUX_STREAM
+  chmod +x "$TMPENV/cmux"
+
+  POLL_RESULT=PUSHED POLL_DELAY=5 POLL_SLEEP=30 \
+    "$TMPENV/poll-wait.sh" \
+      --surface surface:178 --branch feat/test-sigpipe --task 99 \
+      --event-timeout 3 --total-timeout 30
+}
+
 # ═══════════════════════════════════════════════════════════
 # Run tests
 # ═══════════════════════════════════════════════════════════
@@ -203,6 +229,10 @@ assert_output_contains "$output" "TIMEOUT" "timeout output"
 echo "--- Test F: no GNU timeout dependency ---"
 output=$(run_in_mock_env "Test F: no GNU timeout" test_no_gnu_timeout 2>&1) || true
 assert_output_contains "$output" "COMPLETE surface=surface:177 branch=feat/test-notimeout method=event" "no-timeout event match"
+
+echo "--- Test G: streaming cmux + SIGPIPE → ev.result IS written ---"
+output=$(run_in_mock_env "Test G: streaming sigpipe" test_streaming_sigpipe 2>&1) || true
+assert_output_contains "$output" "COMPLETE surface=surface:178 branch=feat/test-sigpipe method=event" "streaming sigpipe → method=event"
 
 echo ""
 if [[ $_FAILURES -eq 0 ]]; then
