@@ -1,0 +1,105 @@
+import { tool } from "@opencode-ai/plugin"
+import { fileURLToPath } from "node:url"
+import { dirname, resolve } from "node:path"
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const PLUGIN_ROOT = resolve(__dirname, "..", "..")
+const BIN = resolve(PLUGIN_ROOT, "bin")
+
+export const CmuxBoardPlugin = async ({ project, client, $, directory, worktree }) => {
+  return {
+    tool: {
+      "board.status": tool({
+        description:
+          "Get board status counts and next ready task. Reads .tasks/board.json. Optionally include up to N ready task objects.",
+        args: {
+          readyTasks: tool.schema
+            .number()
+            .optional()
+            .describe("Max ready tasks to include in the output"),
+        },
+        async execute(args, context) {
+          const { directory, $ } = context
+          const flag =
+            args.readyTasks && args.readyTasks > 0
+              ? `--ready-tasks ${args.readyTasks}`
+              : ""
+          const result =
+            await $`"${BIN}/board-status" --json ${flag}`.cwd(directory).quiet()
+          return result.stdout.toString()
+        },
+      }),
+      "board.next": tool({
+        description:
+          "Get the next actionable task for a given status from .tasks/board.json. Defaults to 'ready' status.",
+        args: {
+          status: tool.schema
+            .string()
+            .optional()
+            .describe(
+              "Canonical status filter (inbox, ready, in-progress, needs-review, blocked, needs-info, done). Default: ready"
+            ),
+        },
+        async execute(args, context) {
+          const { directory, $ } = context
+          const statusArg = args.status ? `--status ${args.status}` : ""
+          const result =
+            await $`"${BIN}/board-next" --json ${statusArg}`.cwd(directory).quiet()
+          return result.stdout.toString()
+        },
+      }),
+      "board.sync": tool({
+        description:
+          "Write a single issue's status back to GitHub by swapping canonical status labels. Uses gh CLI.",
+        args: {
+          issue: tool.schema
+            .number()
+            .describe("GitHub issue number (required)"),
+          status: tool.schema
+            .string()
+            .describe(
+              "Target canonical status (inbox, ready, in-progress, needs-review, blocked, needs-info, done)"
+            ),
+          repo: tool.schema
+            .string()
+            .optional()
+            .describe("Repository as OWNER/REPO (or set BOARD_REPO env var)"),
+        },
+        async execute(args, context) {
+          const { directory, $ } = context
+          const repoArg = args.repo ? `--repo ${args.repo}` : ""
+          const result =
+            await $`"${BIN}/board-sync" --issue ${args.issue.toString()} --status ${args.status} ${repoArg}`.cwd(
+              directory
+            ).quiet()
+          return result.stdout.toString() || result.stderr.toString()
+        },
+      }),
+    },
+    "shell.env": async (input, output) => {
+      output.env.BOARD_REPO = process.env.BOARD_REPO || ""
+      output.env.CURRENT_TASK = process.env.CURRENT_TASK || ""
+    },
+    "session.idle": async (_input, _output) => {
+      const task = process.env.CURRENT_TASK || ""
+      const surface = process.env.SURFACE || ""
+      const status = process.env.STATUS || "success"
+      const branch = process.env.BRANCH || ""
+
+      if (!task || !surface) return
+
+      const payload = branch
+        ? `CTB-DONE task=${task} surface=${surface} status=${status} branch=${branch}`
+        : `CTB-DONE task=${task} surface=${surface} status=${status}`
+
+      console.log(payload)
+
+      try {
+        await $`cmux notify --title "CTB-DONE" --body "task=${task} surface=${surface} status=${status} branch=${branch}" --surface "${surface}"`.quiet()
+      } catch {
+        // cmux not available — stdout payload above is the fallback
+      }
+    },
+  }
+}

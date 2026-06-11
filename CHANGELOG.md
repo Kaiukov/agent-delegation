@@ -5,6 +5,9 @@ This project adheres to semantic versioning.
 
 ## [Unreleased]
 
+### Added
+- First-class OpenCode plugin entrypoint (`.opencode/`) exposing `board.status`, `board.next`, `board.sync` as native custom tools plus `shell.env` and `session.idle` hooks (#78).
+
 ## [0.5.0] - 2026-06-12
 
 ### Added
