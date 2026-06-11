@@ -1,0 +1,514 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_FILE=".tasks/config.json"
+VALID_TIERS=(flash pro review simple top)
+VALID_PROVIDERS=(opencode codex)
+VALID_EFFORTS=(low medium high)
+SCRIPT_NAME="board-model"
+
+usage() {
+  cat <<EOF
+Usage: ${SCRIPT_NAME} add <name> --model <model-id> [--provider <opencode|codex>] [--effort <low|medium|high>]
+       ${SCRIPT_NAME} edit <name> [--model <model-id>] [--provider <opencode|codex>] [--effort <low|medium|high>] [--rename <new-name>]
+       ${SCRIPT_NAME} delete <name> [--force]
+       ${SCRIPT_NAME} asign <name> --tier <tier>
+       ${SCRIPT_NAME} list
+       ${SCRIPT_NAME} --help|-h
+
+Manage project-level provider/model registry and tier assignments stored in ${CONFIG_FILE}.
+
+Commands:
+  add <name>        Add a provider/model entry to the registry.
+                    --model    (required) Model identifier (e.g. gpt-5.5, opencode/deepseek-v4-flash-free).
+                    --provider (optional) opencode or codex. Auto-detected from model pattern if omitted.
+                    --effort   (optional) Reasoning effort for codex: low, medium, high.
+
+  edit <name>       Edit an existing registry entry. At least one change flag is required.
+                    --model    New model identifier.
+                    --provider New provider (opencode or codex).
+                    --effort   New reasoning effort (low, medium, high).
+                    --rename   Rename the entry (all tier assignments follow).
+
+  delete <name>     Delete a registry entry. Refuses if still assigned to any tier unless --force.
+                    --force    Force deletion: removes from registry and clears tier assignments.
+
+  asign <name>      Assign a registry entry to a delegation tier.
+                    --tier     (required) Target tier: flash, pro, review, simple, top.
+
+  list              List all registry entries and current tier assignments.
+
+Validation rules:
+  - Name: non-empty, alphanumeric, hyphens, or underscores. Must not collide with existing entries.
+  - Model: non-empty identifier.
+  - Provider: 'opencode' or 'codex'. Auto-detected when omitted (models with / → opencode, gpt-*/o1-*/o3-*/o4-*/codex*/chatgpt-* → codex, else opencode).
+  - Effort: 'low', 'medium', or 'high'. Only meaningful for codex provider.
+  - Tier: one of: ${VALID_TIERS[*]}
+  - Delete: blocked when the entry is assigned to any tier (use --force to override).
+EOF
+  exit 0
+}
+
+# --- helpers ---
+
+read_config() {
+  if [[ -f "$CONFIG_FILE" ]]; then
+    cat "$CONFIG_FILE"
+  else
+    echo "{}"
+  fi
+}
+
+write_config() {
+  local json="$1"
+  mkdir -p "$(dirname "$CONFIG_FILE")"
+  echo "$json" | jq '.' > "${CONFIG_FILE}.tmp"
+  mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+}
+
+is_interactive() {
+  [[ -t 0 && -t 1 ]]
+}
+
+# --- validators (return 0 = valid, 1 = invalid; print nothing on stdout) ---
+
+validate_name() {
+  local name="$1" label="${2:-name}"
+  if [[ -z "$name" ]]; then
+    echo "${SCRIPT_NAME}: ${label} must not be empty" >&2
+    return 1
+  fi
+  if [[ "$name" =~ [[:space:]] ]]; then
+    echo "${SCRIPT_NAME}: ${label} must not contain whitespace: '${name}'" >&2
+    return 1
+  fi
+  if [[ ! "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "${SCRIPT_NAME}: ${label} must be alphanumeric, hyphens, or underscores: '${name}'" >&2
+    return 1
+  fi
+  return 0
+}
+
+validate_model() {
+  local model="$1"
+  if [[ -z "$model" ]]; then
+    echo "${SCRIPT_NAME}: model must not be empty" >&2
+    return 1
+  fi
+  return 0
+}
+
+validate_provider() {
+  local provider="$1"
+  local found="" p
+  for p in "${VALID_PROVIDERS[@]}"; do
+    [[ "$provider" == "$p" ]] && found=1 && break
+  done
+  if [[ -z "$found" ]]; then
+    echo "${SCRIPT_NAME}: unknown provider '${provider}'. Valid: ${VALID_PROVIDERS[*]}" >&2
+    return 1
+  fi
+  return 0
+}
+
+validate_effort() {
+  local effort="$1"
+  local found="" e
+  for e in "${VALID_EFFORTS[@]}"; do
+    [[ "$effort" == "$e" ]] && found=1 && break
+  done
+  if [[ -z "$found" ]]; then
+    echo "${SCRIPT_NAME}: unknown reasoning effort '${effort}'. Valid: ${VALID_EFFORTS[*]}" >&2
+    return 1
+  fi
+  return 0
+}
+
+validate_tier() {
+  local tier="$1"
+  local found="" t
+  for t in "${VALID_TIERS[@]}"; do
+    [[ "$tier" == "$t" ]] && found=1 && break
+  done
+  if [[ -z "$found" ]]; then
+    echo "${SCRIPT_NAME}: unknown tier '${tier}'. Valid: ${VALID_TIERS[*]}" >&2
+    return 1
+  fi
+  return 0
+}
+
+# Check if name exists in registry
+registry_exists() {
+  local config="$1" name="$2"
+  local key
+  key="$(echo "$config" | jq -r --arg n "$name" '.["model-registry"][$n] // empty' 2>/dev/null)"
+  [[ -n "$key" ]]
+}
+
+# Check which tiers (if any) this name is assigned to
+assigned_tiers() {
+  local config="$1" name="$2"
+  echo "$config" | jq -r --arg n "$name" '
+    .models // {} | to_entries[] | select(.value == $n) | .key
+  ' 2>/dev/null || true
+}
+
+# Auto-detect provider from model pattern (same logic as lib.sh agent_kind_detect)
+auto_detect_provider() {
+  local model="$1"
+  if [[ "$model" == */* ]]; then echo "opencode"; return; fi
+  local lc
+  lc="$(printf '%s' "$model" | tr '[:upper:]' '[:lower:]')"
+  case "$lc" in
+    gpt-*|o1-*|o3-*|o4-*|codex*|chatgpt-*) echo "codex" ;;
+    *) echo "opencode" ;;
+  esac
+}
+
+# --- prompt helpers (interactive) ---
+
+prompt_required() {
+  local var_name="$1" msg="$2" default="${3:-}"
+  local prompt_str
+  if [[ -n "$default" ]]; then
+    prompt_str="${msg} [${default}]: "
+  else
+    prompt_str="${msg}: "
+  fi
+  printf '%s' "$prompt_str" >&2
+  read -r value
+  if [[ -z "$value" && -n "$default" ]]; then
+    value="$default"
+  fi
+  printf -v "$var_name" '%s' "$value"
+}
+
+prompt_optional() {
+  local var_name="$1" msg="$2" default="${3:-}"
+  local prompt_str
+  if [[ -n "$default" ]]; then
+    prompt_str="${msg} [${default}]: "
+  else
+    prompt_str="${msg} (optional): "
+  fi
+  printf '%s' "$prompt_str" >&2
+  read -r value
+  if [[ -z "$value" && -n "$default" ]]; then
+    value="$default"
+  fi
+  printf -v "$var_name" '%s' "$value"
+}
+
+# --- commands ---
+
+cmd_add() {
+  local name="$1" model="" provider="" effort=""
+  shift
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --model) model="$2"; shift 2 ;;
+      --model=*) model="${1#--model=}"; shift ;;
+      --provider) provider="$2"; shift 2 ;;
+      --provider=*) provider="${1#--provider=}"; shift ;;
+      --effort) effort="$2"; shift 2 ;;
+      --effort=*) effort="${1#--effort=}"; shift ;;
+      *) shift ;;
+    esac
+  done
+
+  if ! validate_name "$name"; then return 1; fi
+
+  local config; config="$(read_config)"
+
+  if registry_exists "$config" "$name"; then
+    echo "${SCRIPT_NAME}: entry '${name}' already exists in model-registry. Use 'edit' to modify." >&2
+    return 1
+  fi
+
+  if [[ -z "$model" ]]; then
+    if is_interactive; then
+      prompt_required model "Model ID"
+    else
+      echo "${SCRIPT_NAME}: --model is required for 'add'" >&2
+      return 1
+    fi
+  fi
+  if ! validate_model "$model"; then return 1; fi
+
+  if [[ -z "$provider" ]]; then
+    provider="$(auto_detect_provider "$model")"
+  fi
+  if ! validate_provider "$provider"; then return 1; fi
+
+  if [[ -n "$effort" ]]; then
+    if ! validate_effort "$effort"; then return 1; fi
+  fi
+
+  local entry
+  entry="$(jq -n --arg model "$model" --arg provider "$provider" '{model: $model, provider: $provider}')"
+  if [[ -n "$effort" ]]; then
+    entry="$(echo "$entry" | jq --arg effort "$effort" '. + {reasoning_effort: $effort}')"
+  fi
+
+  local updated
+  updated="$(echo "$config" | jq --arg n "$name" --argjson e "$entry" \
+    '.["model-registry"][$n] = $e')"
+  write_config "$updated"
+  echo "Added '${name}': model=${model} provider=${provider}${effort:+ effort=${effort}}"
+}
+
+cmd_edit() {
+  local name="$1" model="" provider="" effort="" rename=""
+  shift
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --model) model="$2"; shift 2 ;;
+      --model=*) model="${1#--model=}"; shift ;;
+      --provider) provider="$2"; shift 2 ;;
+      --provider=*) provider="${1#--provider=}"; shift ;;
+      --effort) effort="$2"; shift 2 ;;
+      --effort=*) effort="${1#--effort=}"; shift ;;
+      --rename) rename="$2"; shift 2 ;;
+      --rename=*) rename="${1#--rename=}"; shift ;;
+      *) shift ;;
+    esac
+  done
+
+  if ! validate_name "$name"; then return 1; fi
+
+  local config; config="$(read_config)"
+
+  if ! registry_exists "$config" "$name"; then
+    echo "${SCRIPT_NAME}: entry '${name}' not found in model-registry." >&2
+    return 1
+  fi
+
+  if [[ -z "$model$provider$effort$rename" ]]; then
+    echo "${SCRIPT_NAME}: 'edit' requires at least one of --model, --provider, --effort, --rename" >&2
+    return 1
+  fi
+
+  if [[ -n "$rename" ]]; then
+    if ! validate_name "$rename" "new-name"; then return 1; fi
+    if [[ "$rename" != "$name" ]] && registry_exists "$config" "$rename"; then
+      echo "${SCRIPT_NAME}: cannot rename '${name}' to '${rename}': '${rename}' already exists in model-registry." >&2
+      return 1
+    fi
+  fi
+
+  if [[ -n "$model" ]]; then
+    if ! validate_model "$model"; then return 1; fi
+  fi
+  if [[ -n "$provider" ]]; then
+    if ! validate_provider "$provider"; then return 1; fi
+  fi
+  if [[ -n "$effort" ]]; then
+    if ! validate_effort "$effort"; then return 1; fi
+  fi
+
+  local entry_json
+  entry_json="$(echo "$config" | jq --arg n "$name" '.["model-registry"][$n]')"
+
+  if [[ -n "$model" ]]; then
+    entry_json="$(echo "$entry_json" | jq --arg m "$model" '.model = $m')"
+  fi
+  if [[ -n "$provider" ]]; then
+    entry_json="$(echo "$entry_json" | jq --arg p "$provider" '.provider = $p')"
+  fi
+  if [[ -n "$effort" ]]; then
+    entry_json="$(echo "$entry_json" | jq --arg e "$effort" '.reasoning_effort = $e')"
+  fi
+
+  local updated
+  if [[ -n "$rename" && "$rename" != "$name" ]]; then
+    updated="$(echo "$config" | jq --arg old "$name" --arg new "$rename" --argjson e "$entry_json" '
+      .["model-registry"][$new] = $e |
+      del(.["model-registry"][$old]) |
+      .models |= with_entries(if .value == $old then .value = $new else . end)
+    ')"
+  else
+    updated="$(echo "$config" | jq --arg n "$name" --argjson e "$entry_json" \
+      '.["model-registry"][$n] = $e')"
+  fi
+
+  write_config "$updated"
+  local final_name="${rename:-$name}"
+  echo "Edited '${final_name}'."
+}
+
+cmd_delete() {
+  local name="$1" force=""
+  shift
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force) force=1; shift ;;
+      *) shift ;;
+    esac
+  done
+
+  if ! validate_name "$name"; then return 1; fi
+
+  local config; config="$(read_config)"
+
+  if ! registry_exists "$config" "$name"; then
+    echo "${SCRIPT_NAME}: entry '${name}' not found in model-registry." >&2
+    return 1
+  fi
+
+  local tiers
+  tiers="$(assigned_tiers "$config" "$name")"
+
+  if [[ -n "$tiers" && -z "$force" ]]; then
+    echo "${SCRIPT_NAME}: cannot delete '${name}': assigned to tier(s): $(echo "$tiers" | tr '\n' ' ')" >&2
+    echo "${SCRIPT_NAME}: use --force to delete and clear assignments, or re-asign first." >&2
+    return 1
+  fi
+
+  local updated
+  updated="$(echo "$config" | jq --arg n "$name" 'del(.["model-registry"][$n])')"
+
+  if [[ -n "$force" && -n "$tiers" ]]; then
+    updated="$(echo "$updated" | jq --arg n "$name" '
+      .models |= with_entries(select(.value != $n))
+    ')"
+  fi
+
+  write_config "$updated"
+  if [[ -n "$force" && -n "$tiers" ]]; then
+    echo "Deleted '${name}' and cleared assignments for: $(echo "$tiers" | tr '\n' ' ')"
+  else
+    echo "Deleted '${name}'."
+  fi
+}
+
+cmd_asign() {
+  local name="$1" tier=""
+  shift
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --tier) tier="$2"; shift 2 ;;
+      --tier=*) tier="${1#--tier=}"; shift ;;
+      *) shift ;;
+    esac
+  done
+
+  if ! validate_name "$name"; then return 1; fi
+
+  if [[ -z "$tier" ]]; then
+    if is_interactive; then
+      prompt_required tier "Tier (flash|pro|review|simple|top)"
+    else
+      echo "${SCRIPT_NAME}: --tier is required for 'asign'" >&2
+      return 1
+    fi
+  fi
+  if ! validate_tier "$tier"; then return 1; fi
+
+  local config; config="$(read_config)"
+
+  if ! registry_exists "$config" "$name"; then
+    echo "${SCRIPT_NAME}: entry '${name}' not found in model-registry. Use 'add' first." >&2
+    return 1
+  fi
+
+  local updated
+  updated="$(echo "$config" | jq --arg t "$tier" --arg n "$name" '.models[$t] = $n')"
+  write_config "$updated"
+  echo "Assigned '${name}' to tier '${tier}'."
+}
+
+cmd_list() {
+  local config; config="$(read_config)"
+
+  echo "Model registry:"
+  local registry
+  registry="$(echo "$config" | jq -r '
+    .["model-registry"] // {} | to_entries[] | "  \(.key): model=\(.value.model // "?") provider=\(.value.provider // "opencode")\(if .value.reasoning_effort then " effort=\(.value.reasoning_effort)" else "" end)"
+  ' 2>/dev/null || true)"
+  if [[ -z "$registry" ]]; then
+    echo "  (empty)"
+  else
+    echo "$registry"
+  fi
+
+  echo ""
+  echo "Tier assignments:"
+
+  local DEFAULT_MODELS_JSON='{"flash":"opencode/deepseek-v4-flash-free","pro":"opencode-go/deepseek-v4-pro","review":"gpt-5.4","simple":"gpt-5.4-mini","top":"gpt-5.5"}'
+
+  local assigned_json
+  assigned_json="$(echo "$config" | jq -r '
+    .["model-registry"] as $reg |
+    .models // {} | to_entries | sort_by(.key) | .[] |
+    if $reg[.value] != null then
+      "ASSIGNED|\(.key)|\(.value)"
+    else
+      "DIRECT|\(.key)|\(.value)"
+    end
+  ' 2>/dev/null || true)"
+
+  local configured_tiers=""
+  while IFS='|' read -r typ key val; do
+    if [[ -n "$typ" ]]; then
+      configured_tiers="${configured_tiers}${key}"$'\n'
+      if [[ "$typ" == "ASSIGNED" ]]; then
+        echo "  ${key} → ${val} [registry]"
+      else
+        echo "  ${key} → ${val}"
+      fi
+    fi
+  done <<<"$assigned_json"
+
+  for t in "${VALID_TIERS[@]}"; do
+    local shown="" line
+    while IFS= read -r line; do
+      [[ "$line" == "$t" ]] && shown=1 && break
+    done <<<"$configured_tiers"
+    if [[ -z "$shown" ]]; then
+      local def
+      def="$(echo "$DEFAULT_MODELS_JSON" | jq -r --arg t "$t" '.[$t]')"
+      echo "  ${t} → ${def} (default)"
+    fi
+  done
+}
+
+# --- main ---
+
+if [[ $# -eq 0 ]]; then
+  usage
+fi
+
+case "$1" in
+  --help|-h) usage ;;
+  add)
+    if [[ $# -lt 2 ]]; then echo "${SCRIPT_NAME}: 'add' requires a name. Use --help." >&2; exit 1; fi
+    name="$2"; shift 2
+    cmd_add "$name" "$@"
+    ;;
+  edit)
+    if [[ $# -lt 2 ]]; then echo "${SCRIPT_NAME}: 'edit' requires a name. Use --help." >&2; exit 1; fi
+    name="$2"; shift 2
+    cmd_edit "$name" "$@"
+    ;;
+  delete)
+    if [[ $# -lt 2 ]]; then echo "${SCRIPT_NAME}: 'delete' requires a name. Use --help." >&2; exit 1; fi
+    name="$2"; shift 2
+    cmd_delete "$name" "$@"
+    ;;
+  asign)
+    if [[ $# -lt 2 ]]; then echo "${SCRIPT_NAME}: 'asign' requires a name. Use --help." >&2; exit 1; fi
+    name="$2"; shift 2
+    cmd_asign "$name" "$@"
+    ;;
+  list)
+    cmd_list "$@"
+    ;;
+  *)
+    echo "${SCRIPT_NAME}: unknown command '${1}'. Use --help." >&2
+    exit 1
+    ;;
+esac

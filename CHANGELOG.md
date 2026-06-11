@@ -7,9 +7,16 @@ This project adheres to semantic versioning.
 
 ### Added
 - First-class OpenCode plugin entrypoint (`.opencode/`) exposing `board.status`, `board.next`, `board.sync` as native custom tools plus `shell.env` and `session.idle` hooks (#78).
+- `board-model` — project-level provider/model registry and tier assignment manager with four public operations: `asign`, `add`, `edit`, and `delete` (#72).
+- `board-config --get-model <tier> --provider|--effort|--json` — registry-aware model resolution with provider and reasoning-effort flags (#72).
+- `skills/board-model/SKILL.md` — skill definition and user-facing documentation for model/provider management (#72).
+- `test_board_model.sh` — 58 tests covering validation, operations, resolution, persistence, and backward compatibility (#72).
 
 ### Fixed
 - Agent-spawn surface race: parse the authoritative surface ref directly from `cmux new-split` output instead of before/after whole-tree diffing + `sleep 1` + `comm -13`, eliminating a race where two parallel spawns could select the same surface (#77).
+
+### Changed
+- `board-config --get-model` now resolves through the `model-registry` in `.tasks/config.json` when a tier is assigned to a registry entry, falling back to bare model IDs and built-in defaults (#72).
 
 ## [0.5.0] - 2026-06-12
 
