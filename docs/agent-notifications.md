@@ -1,6 +1,6 @@
 # Agent Completion Notifications
 
-**Status:** IMPLEMENTED — `agent-notify.sh` + `poll-push.sh` fallback.
+**Status:** IMPLEMENTED — event-driven `poll-wait.sh` (PRIMARY) + `poll-push.sh` fallback.
 
 ## cmux primitives
 
@@ -32,11 +32,15 @@ installed in the agent session.
 ## Recommended flow
 
 ```
-Agent finishes  →  cmux notify orchestrator (primary, carries payload)
-                              ↓
-                   orchestrator marks task complete
-                              ↓
-              if no event within timeout → poll-push.sh (fallback)
+Agent finishes  →  cmux notify orchestrator (explicit CTB-DONE, structured flags)
+                               ↓
+                    cmux-session.js emits agent.hook.Stop (automatic lifecycle)
+                               ↓
+                    poll-wait.sh detects either signal via cmux events stream
+                               ↓
+                    orchestrator marks task complete
+                               ↓
+               if no event within timeout → poll-push.sh fallback (git polling)
 ```
 
 The fallback window should be generous enough to avoid false timeouts

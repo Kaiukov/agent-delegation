@@ -71,7 +71,11 @@ For each task you actually execute, run the orchestrator loop:
    `<worktree>/.task-spec.md`), never `/tmp` or external dirs, to avoid
    'Access external directory' permission prompts. Use the compact
    `.task-spec.md` format (see below).
-4. **Poll** origin until the branch is pushed (run the poll in the background).
+4. **Wait (event-driven + poll fallback)** for the agent to finish. Primary path
+   subscribes to `cmux events` (agent.hook.Stop / lifecycle idle / CTB-DONE
+   notify); fallback polls `git ls-remote origin <branch>` every 60 s. Run
+   `poll-wait.sh --surface <ref> --branch <name> [--task <id>]` in the
+   background (`Bash run_in_background:true`).
 5. **Verify independently** — the hard gate: run the project's tests +
    validation yourself. Do not trust the agent's word.
 6. **Live-check** anything real (deploy / `--remote` / migration) yourself.
@@ -106,7 +110,8 @@ Bundled at `skills/cmux-agent-workflows/scripts/`:
 - `wt-new.sh` — worktree off `origin/main`
 - `agent-spawn.sh` — spawn agent (model tier via `board-config --get-model <tier>`)
 - `agent-send.sh` — send task spec
-- `poll-push.sh` — poll origin (background)
+- `poll-wait.sh` — wait event-driven + poll fallback (background)
+- `poll-push.sh` — git poll fallback (used internally by poll-wait.sh)
 - `verify.sh` / `verify-ts.sh` — hard gate
 - `pr-finish.sh` — merge + cleanup
 - `agent-kill.sh` — tear down pane
