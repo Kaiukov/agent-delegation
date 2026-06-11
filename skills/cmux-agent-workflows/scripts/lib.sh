@@ -115,10 +115,12 @@ agent_launch_cmd() {
 agent_ready_patterns() {
   case "$1" in
     opencode)
-      # The opencode TUI shows "Build · <model>" in the input box footer and
-      # the model banner in the header. Match on the model separator "·" so we
-      # don't false-positive on plain OpenCode splash.
-      printf '%s' 'Build · |· DeepSeek|· GPT|^OpenCode|esc dismiss'
+      # The opencode TUI shows "Build · <model>" in the input box footer.
+      # Width-stable markers that survive reflow in narrow split panes (#54):
+      # esc dismiss is always present in the footer; · DeepSeek / · GPT cover
+      # common models; Build · catches the prompt box. Normalized spacing
+      # (tr -s) in wait_agent_ready ensures reflowed fragments still match.
+      printf '%s' 'Build · |· DeepSeek|· GPT|esc dismiss'
       ;;
     codex)
       # The codex TUI shows the OpenAI Codex banner + model id in the prompt
@@ -146,10 +148,13 @@ wait_agent_ready() {
   local pattern trust_seen=""
   pattern="$(agent_ready_patterns "$kind")"
   while (( waited < timeout )); do
-    local screen
+    local screen normalized
     screen="$(cmux read-screen --surface "$surface" --lines 40 2>/dev/null || true)"
+    # Normalize: collapse whitespace/newlines into a single stream so reflowed
+    # footer fragments match in narrow split panes (#54).
+    normalized="$(printf '%s' "$screen" | tr -s ' \n' ' ')"
     if [[ "$kind" == "codex" && -z "$trust_seen" ]] \
-         && grep -qE 'Do you trust the contents of this directory' <<<"$screen"; then
+         && grep -qE 'Do you trust the contents of this directory' <<<"$normalized"; then
       log "auto-accepting codex trust prompt in $surface"
       cmux send --surface "$surface" -- "1" >&2
       sleep 1
@@ -158,7 +163,7 @@ wait_agent_ready() {
       sleep 3; waited=$((waited+4))
       continue
     fi
-    if grep -qE "$pattern" <<<"$screen"; then
+    if grep -qE "$pattern" <<<"$normalized"; then
       return 0
     fi
     sleep 3; waited=$((waited+3))
