@@ -48,6 +48,7 @@ Scripts: `skills/cmux-agent-workflows/scripts/`.
 
 1. Detect repo (BOARD_REPO or ask).
 2. If absent, run `board-pull`.
-3. Summarize board.json counts.
+3. Run `board-status --json --ready-tasks 5` to get counts and ready tasks
+   (compact JSON call instead of reading full `board.json`).
 4. Run `board-plan` to mirror ready.
 5. Report and await user confirmation before dispatching.

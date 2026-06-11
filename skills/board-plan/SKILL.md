@@ -23,15 +23,17 @@ entries in Claude's built-in task list for the current round.
 
 ## Procedure
 
-1. Read `.tasks/board.json`.
-2. Filter to tasks where `status == "ready"`.
-3. Mirror up to **5** ready tasks (the cap). For each, create a task entry with:
+1. Run `board-status --json --ready-tasks 5` to get counts and up to 5 ready
+   task objects without reading the full `board.json`.
+2. Mirror up to **5** ready tasks from the `ready_tasks` array (the cap). For
+   each, create a task entry with:
    - `title`: `#{number} {title}` for GitHub tasks, `[{id}] {title}` for local tasks.
    - `description`: URL and labels from the board entry.
    - `status`: `pending`
-4. If there are more than 5 ready tasks, emit one compact summary line:
-   `… and N more ready tasks (see board.json)`.
-5. Do NOT create tasks for `blocked` or `needs-info` items — those must never
+3. If `counts.ready` exceeds the length of `ready_tasks`, emit one compact
+   summary line: `… and N more ready tasks (see board.json)` where
+   `N = counts.ready - length(ready_tasks)`.
+4. Do NOT create tasks for `blocked` or `needs-info` items — those must never
    be started without explicit user action.
 
 ## After running
