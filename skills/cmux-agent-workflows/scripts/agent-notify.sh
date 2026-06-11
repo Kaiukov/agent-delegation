@@ -33,7 +33,7 @@ fi
 PAYLOAD="$(format_notify_payload "$TASK" "$SURFACE" "$STATUS" "$BRANCH")"
 
 if command -v cmux &>/dev/null; then
-  cmux notify "$PAYLOAD" 2>/dev/null || true
+  cmux notify --title "CTB-DONE" --body "task=$TASK surface=$SURFACE status=$STATUS branch=${BRANCH:-}" --surface "$SURFACE" 2>/dev/null || true
   echo "$PAYLOAD"
 else
   echo "$PAYLOAD"

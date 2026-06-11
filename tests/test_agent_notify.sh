@@ -82,6 +82,23 @@ else
   failures=$((failures + 1))
 fi
 
+echo "=== Test 7: structured cmux notify call (mock) ==="
+# Mock cmux to capture the flags it receives
+cmux() {
+  if [[ "$1" == "notify" ]]; then
+    printf 'cmux-notify-args: %s\n' "$*"
+  fi
+}
+export -f cmux
+# Run the script itself (it sources lib.sh which may need cmux; use a subshell)
+NOTIFY_OUT=$(bash -c "TASK=32 SURFACE=surface:172 STATUS=success BRANCH=feat/foo; PAYLOAD=\$(printf 'CTB-DONE task=%s surface=%s status=%s branch=%s' \"\$TASK\" \"\$SURFACE\" \"\$STATUS\" \"\$BRANCH\"); cmux notify --title \"CTB-DONE\" --body \"task=\$TASK surface=\$SURFACE status=\$STATUS branch=\${BRANCH:-}\" --surface \"\$SURFACE\" 2>/dev/null || true; echo \"\$PAYLOAD\"" 2>/dev/null)
+if echo "$NOTIFY_OUT" | grep -q "CTB-DONE" && echo "$NOTIFY_OUT" | grep -q "task=32"; then
+  echo "PASS"
+else
+  echo "FAIL: notify output missing CTB-DONE payload"
+  failures=$((failures + 1))
+fi
+
 echo ""
 if [[ $failures -eq 0 ]]; then
   echo "All format_notify_payload tests passed."

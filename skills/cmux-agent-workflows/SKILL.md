@@ -62,8 +62,9 @@ approvals through `PermissionRequest` / `PreToolUse`).
 | `agent-send.sh <surface> <text…>` | Send a prompt + Enter (stdin for long prompts) | `agent-send.sh surface:172 "run tests, paste output"` |
 | `agent-screen.sh <surface> [lines]` | Read a surface screen | `agent-screen.sh surface:172 30` |
 | `agent-kill.sh <surface> [--agent opencode\|codex] [--close]` | Kill the agent proc by tty, optionally close split | `agent-kill.sh surface:172 --agent codex --close` |
-| `agent-notify.sh --task <id> --surface <ref> --status success\|failure [--branch <b>]` | Agent's FINAL step: emit CTB-DONE payload via `cmux notify` (PRIMARY) or stdout (FALLBACK). Never hard-fails. Orchestrator treats this as the primary completion signal; `poll-push.sh` is the fallback. | `agent-notify.sh --task 32 --surface surface:172 --status success --branch feat/foo` |
-| `poll-push.sh <branch> [int] [timeout]` | Poll origin until branch pushed; print PR. FALLBACK to `agent-notify.sh`. Reports done immediately if branch already exists ahead of origin/main (handles pre-pushed case). Run with `run_in_background:true` | `poll-push.sh feat/foo 30 1800` |
+| `agent-notify.sh --task <id> --surface <ref> --status success\|failure [--branch <b>]` | Agent's FINAL step: emit CTB-DONE payload via `cmux notify` (structured flags: `--title --body --surface`) or stdout (FALLBACK). Never hard-fails. | `agent-notify.sh --task 32 --surface surface:172 --status success --branch feat/foo` |
+| `poll-wait.sh --surface <ref> --branch <name> [--task <id>] [--event-timeout <s>] [--total-timeout <s>]` | **PRIMARY** dual-source wait: event-driven (`cmux events` → agent.hook.Stop / lifecycle idle / CTB-DONE) with `poll-push.sh` fallback. Run with `run_in_background:true` | `poll-wait.sh --surface surface:172 --branch feat/foo --task 44 --total-timeout 600` |
+| `poll-push.sh <branch> [int] [timeout]` | **FALLBACK** git-poll: polls origin until branch pushed; print PR. Used internally by `poll-wait.sh`; not called directly in the new delegation cycle. | `poll-push.sh feat/foo 30 1800` |
 | `verify.sh <wt> [base-ref]` | Project-agnostic gate: `bash -n` on changed shell scripts + `bun test`/`npm test` if a test script exists; no-op otherwise | `verify.sh $WT` |
 | `verify-ts.sh <wt>` | TS-specific hard gate: typecheck + full `bun test`, exits non-zero on any failure | `verify-ts.sh ../wt-feat-foo` |
 | `pr-finish.sh <pr#> [wt]` | Remove worktree, squash-merge, delete branch | `pr-finish.sh 121 $WT` |
@@ -84,9 +85,11 @@ SURF=$($S/agent-spawn.sh right "$WT" opencode-go/deepseek-v4-pro TASK)   # openc
 SURF=$($S/agent-spawn.sh right "$WT" gpt-5.4 TASK -c model_reasoning_effort=high --agent codex)
 # (auto-detect: gpt-5.4 / gpt-5.4-mini / o3 / o4-mini / etc. all dispatch to codex; provider/model form goes to opencode)
 $S/agent-send.sh "$SURF" < dispatch-prompt.txt   # 2. dispatch the task
-# 3. poll for push in background (Bash run_in_background:true):
-$S/poll-push.sh feat/foo 30 1800
-# … notified on push …
+# 3. wait for completion in background (Bash run_in_background:true):
+#    PRIMARY: event-driven via cmux events (agent.hook.Stop / lifecycle idle / CTB-DONE)
+#    FALLBACK: poll-push.sh (git ls-remote polling)
+$S/poll-wait.sh --surface "$SURF" --branch feat/foo --total-timeout 600
+# … notified on completion …
 $S/verify.sh "$WT"                             # 4. independent gate
 # 5. live check / live deploy yourself if relevant (orchestrator-only)
 $S/pr-finish.sh 42 "$WT"                       # 6. merge + cleanup
