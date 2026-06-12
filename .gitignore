@@ -2,3 +2,6 @@
 TODO.md
 .orchestrator/
 __pycache__/
+
+# worker task specs live inside each worktree, never tracked
+.task-spec.md
