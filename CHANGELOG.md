@@ -6,6 +6,7 @@ This project adheres to semantic versioning.
 ## [Unreleased]
 
 ### Added
+- docs: orchestrator token-efficiency diagnostics + benchmark + secret-safe rules (#107).
 - docs: canonical orchestrator token-efficiency policy (budgets, routing, handoff, bounded specs) (#106).
 - docs: Pi CLI usage guide + cmux terminal agent-spawn recipe (docs/pi-cli-usage.md)
 - `pr-finish.sh` now requires explicit user confirmation before merge/close (L5).
