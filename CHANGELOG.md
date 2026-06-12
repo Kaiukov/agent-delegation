@@ -6,6 +6,10 @@ This project adheres to semantic versioning.
 ## [Unreleased]
 
 ### Added
+- Install-location-independent `bin/` resolution in `.opencode/plugins/cmux-board.mjs`: priority-ordered lookup via `CMUX_BOARD_HOME` env var → walk-up search for `bin/board-status` → relative fallback (#81).
+- `.opencode/agent/orchestrator.md` `mode: primary` agent encoding the orchestrator role, board workflow, delegation cycle, and standby rule (#81).
+- Skills discoverability via `skills.paths` in `.opencode/opencode.json`, pointing at the existing `skills/` directory (#81).
+- `tests/test_opencode_bin_resolve.sh` — 6 tests covering CMUX_BOARD_HOME override, walk-up discovery, fallback, and real repo resolution (#81).
 - First-class OpenCode plugin entrypoint (`.opencode/`) exposing `board.status`, `board.next`, `board.sync` as native custom tools plus `shell.env` and `session.idle` hooks (#78).
 - `board-model` — project-level provider/model registry and tier assignment manager with four public operations: `asign`, `add`, `edit`, and `delete` (#72).
 - `board-config --get-model <tier> --provider|--effort|--json` — registry-aware model resolution with provider and reasoning-effort flags (#72).
