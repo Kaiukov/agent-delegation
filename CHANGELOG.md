@@ -24,6 +24,10 @@ This project adheres to semantic versioning.
   (`skills/cmux-agent-workflows/templates/task-spec.template.md`) with scope,
   exact file bounds, acceptance, verification, commit/push, contention-guard
   convention, and forbidden paths, plus a guide in docs/task-spec-template.md (L10).
+- Guardrail tests for Pi extensions: `guardrail-ext-no-external-imports.sh` (rejects
+  any import outside pi's SDK + Node built-ins) and `guardrail-pi-runtime-smoke.sh`
+  (loads every extension in pi, asserts clean startup with no "Cannot find module"
+  errors). These hard-gates prevent regressions like #91 from slipping through CI (#91).
 
 ### Fixed
 - Damage-control Pi extension no longer imports the unavailable `yaml` module:
