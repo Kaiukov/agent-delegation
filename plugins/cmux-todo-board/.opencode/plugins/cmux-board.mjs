@@ -1,16 +1,33 @@
 import { tool } from "@opencode-ai/plugin"
 import { fileURLToPath } from "node:url"
-import { dirname, resolve } from "node:path"
+import { dirname, resolve, join } from "node:path"
+import { existsSync } from "node:fs"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
-const PLUGIN_ROOT = resolve(__dirname, "..", "..")
-const BIN = resolve(PLUGIN_ROOT, "bin")
+
+export function resolveBinDir() {
+  if (process.env.CMUX_BOARD_HOME) {
+    const candidate = join(process.env.CMUX_BOARD_HOME, "bin", "board-status")
+    if (existsSync(candidate)) return join(process.env.CMUX_BOARD_HOME, "bin")
+  }
+  let dir = __dirname
+  for (let i = 0; i < 10; i++) {
+    const candidate = join(dir, "bin", "board-status")
+    if (existsSync(candidate)) return join(dir, "bin")
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  return resolve(__dirname, "..", "..", "bin")
+}
+
+const BIN = resolveBinDir()
 
 export const CmuxBoardPlugin = async ({ project, client, $, directory, worktree }) => {
   return {
     tool: {
-      "board.status": tool({
+      "board_status": tool({
         description:
           "Get board status counts and next ready task. Reads .tasks/board.json. Optionally include up to N ready task objects.",
         args: {
@@ -30,7 +47,7 @@ export const CmuxBoardPlugin = async ({ project, client, $, directory, worktree 
           return result.stdout.toString()
         },
       }),
-      "board.next": tool({
+      "board_next": tool({
         description:
           "Get the next actionable task for a given status from .tasks/board.json. Defaults to 'ready' status.",
         args: {
@@ -49,7 +66,7 @@ export const CmuxBoardPlugin = async ({ project, client, $, directory, worktree 
           return result.stdout.toString()
         },
       }),
-      "board.sync": tool({
+      "board_sync": tool({
         description:
           "Write a single issue's status back to GitHub by swapping canonical status labels. Uses gh CLI.",
         args: {

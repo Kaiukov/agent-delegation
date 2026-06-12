@@ -45,3 +45,17 @@ Agent finishes  →  cmux notify orchestrator (explicit CTB-DONE, structured fla
 
 The fallback window should be generous enough to avoid false timeouts
 but short enough that no task is stranded indefinitely.
+
+## Backend matrix
+
+| Backend | Setup | Completion / notification path | Feed path |
+|---|---|---|---|
+| Claude Code | Wrapper-managed; enabled through cmux settings | `cmux notify --title "CTB-DONE" --body "..." --surface <surface>` from the agent's final step, then observe `cmux events --category notification` / `--category agent` | Wrapper-injected `PermissionRequest` only; use `cmux feed tui` to approve from the sidebar when a request appears |
+| Codex | `cmux hooks codex install` | Same `cmux notify` completion signal; `poll-wait.sh` listens for `CTB-DONE` and agent idle events | `cmux hooks feed --source codex` is the bridge behind `cmux hooks codex install`; Codex approvals surface through the Feed / notification flow |
+| OpenCode | `cmux hooks opencode install` and optionally `--feed` or `--project` | Same `cmux notify` completion signal; `poll-wait.sh` listens for `CTB-DONE` and agent lifecycle events | `cmux hooks opencode install --feed` writes the feed plugin and exposes approvals / questions in the Feed sidebar |
+
+Practical rule:
+
+- Use `cmux notify` for one-way completion or alert messages.
+- Use `cmux feed tui` when the agent is blocked on permission, plan-mode, or a question.
+- Use `cmux events --category notification --category agent --category feed` when you want to automate against the stream instead of reading the UI.
