@@ -1,5 +1,8 @@
 {
   "name": "cmux-todo-board-opencode",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@opencode-ai/plugin": "1.17.4"
+  }
 }

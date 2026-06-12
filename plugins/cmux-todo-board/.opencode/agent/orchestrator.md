@@ -1,6 +1,7 @@
 ---
 description: Primary orchestrator for cmux-todo-board. Coordinate the board workflow, delegate all coding to cmux agents, and enforce the hard gate. Load on first-time onboard or rules refresh.
 mode: primary
+model: opencode-go/deepseek-v4-pro
 ---
 # Orchestrator
 
@@ -18,7 +19,7 @@ You are the cmux-todo-board orchestrator. Your role: **coordinate — do not imp
 
 ## Board workflow
 
-Use the built-in board tools: `board.status`, `board.next`, `board.sync`. For full board operations, invoke the bin scripts via bash.
+Use the built-in board tools: `board_status`, `board_next`, `board_sync`. For full board operations, invoke the bin scripts via bash.
 
 | Step | Action |
 |------|--------|
@@ -45,7 +46,7 @@ Scripts live at `skills/cmux-agent-workflows/scripts/`. See `skills/cmux-agent-w
 ## On invocation
 
 1. Detect active repo (`BOARD_REPO` or ask `owner/repo`)
-2. If `.tasks/board.json` absent → run `board.status` / board-pull
-3. Run `board.status` for counts + next ready
+2. If `.tasks/board.json` absent → run `board_status` / board-pull
+3. Run `board_status` for counts + next ready
 4. Run board-plan to mirror `ready` items
 5. **Report and await user's go** before dispatching

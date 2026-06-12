@@ -91,10 +91,10 @@ GitHub: <url>
 
 After dispatching an agent into a cmux pane, the orchestrator MUST enter standby mode:
 
-- **No active screen/status polling.** Do not call `agent-screen.sh`, `agent-send.sh` with read flags, or any pane-reading command to check progress. The orchestrator waits for a completion signal (`CTB-DONE` via `agent-notify.sh` / `cmux events` lifecycle idle) or an explicit user nudge before re-engaging.
-- **Background poll fallback is allowed.** `poll-wait.sh` / `poll-push.sh` run in the background (`run_in_background: true`) and do not count as active polling — they are event-driven waiters with a git `ls-remote` fallback, not a screen-scrape loop.
-- **One bounded light read on signal.** After a completion signal or user nudge, a single `agent-screen.sh <surface> <N>` (≤40 lines) is permitted to read the final report. Do not page through the pane or poll it.
-- **Do not type into a working agent pane.** `agent-send.sh` MUST NOT be called against an active agent surface until the agent has either completed (sent a signal) or the user explicitly instructs you to intervene.
+- **Do not screen-scrape the pane.** `agent-screen.sh`, `agent-send.sh` with read flags, and similar progress checks are prohibited while the agent is working.
+- **Wait on the event stream in the background.** `poll-wait.sh` is the primary waiter; it listens to `cmux events --category agent --category notification` and resolves on either an agent idle/Stop event or a `CTB-DONE` notification. `poll-push.sh` is only the fallback if the event path is missed.
+- **Read once after a signal.** After `poll-wait.sh` or an explicit user nudge says the agent is done, a single `agent-screen.sh <surface> <N>` call (≤40 lines) is allowed to read the final report.
+- **Do not type into a working agent pane.** `agent-send.sh` MUST NOT be called against an active agent surface until the agent has completed or the user explicitly instructs intervention.
 
 ## On invocation
 

@@ -10,13 +10,15 @@ This project adheres to semantic versioning.
 - `.opencode/agent/orchestrator.md` `mode: primary` agent encoding the orchestrator role, board workflow, delegation cycle, and standby rule (#81).
 - Skills discoverability via `skills.paths` in `.opencode/opencode.json`, pointing at the existing `skills/` directory (#81).
 - `tests/test_opencode_bin_resolve.sh` — 6 tests covering CMUX_BOARD_HOME override, walk-up discovery, fallback, and real repo resolution (#81).
-- First-class OpenCode plugin entrypoint (`.opencode/`) exposing `board.status`, `board.next`, `board.sync` as native custom tools plus `shell.env` and `session.idle` hooks (#78).
+- First-class OpenCode plugin entrypoint (`.opencode/`) exposing `board_status`, `board_next`, `board_sync` as native custom tools plus `shell.env` and `session.idle` hooks (#78).
+- Default `model: opencode-go/deepseek-v4-pro` for the `.opencode/agent/orchestrator.md` agent so it no longer falls back to an unconfigured local provider (#81).
 - `board-model` — project-level provider/model registry and tier assignment manager with four public operations: `asign`, `add`, `edit`, and `delete` (#72).
 - `board-config --get-model <tier> --provider|--effort|--json` — registry-aware model resolution with provider and reasoning-effort flags (#72).
 - `skills/board-model/SKILL.md` — skill definition and user-facing documentation for model/provider management (#72).
 - `test_board_model.sh` — 58 tests covering validation, operations, resolution, persistence, and backward compatibility (#72).
 
 ### Fixed
+- OpenCode board tools renamed from dotted (`board.status`/`board.next`/`board.sync`) to underscore (`board_status`/`board_next`/`board_sync`) so providers that enforce the `^[a-zA-Z0-9_-]+$` tool-name pattern (e.g. DeepSeek) accept them instead of erroring on every call (#81).
 - Agent-spawn surface race: parse the authoritative surface ref directly from `cmux new-split` output instead of before/after whole-tree diffing + `sleep 1` + `comm -13`, eliminating a race where two parallel spawns could select the same surface (#77).
 
 ### Changed
