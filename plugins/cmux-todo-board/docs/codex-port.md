@@ -6,15 +6,16 @@ Do not duplicate the worker runtime or board logic.
 
 ## Format Parity
 
-| Surface | Claude Code path | Codex path | Notes |
-|---|---|---|---|
-| Plugin manifest | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json` | Same plugin identity and metadata; only the manifest entry point changes. |
-| Marketplace file | `.claude-plugin/marketplace.json` | `.agents/plugins/marketplace.json` | Codex uses a repo-scoped marketplace catalog; the plugin source stays local to this repo. |
-| Skills | `skills/*/SKILL.md` | `skills/*/SKILL.md` | Shared verbatim. |
-| Hooks | `hooks/hooks.json` | `hooks/hooks.json` | Shared verbatim. |
-| Worker scripts | `skills/cmux-agent-workflows/scripts/*` | `skills/cmux-agent-workflows/scripts/*` | Shared backend-agnostic dispatch, wait, notify, and cleanup helpers. |
-| Board cache | `.tasks/*` | `.tasks/*` | Shared cache and state model. |
-| Board logic | `bin/board-*` | `bin/board-*` | Shared commands and label/state flow. |
+| Surface | Claude Code path | Codex path | OpenCode path | Notes |
+|---|---|---|---|---|
+| Plugin manifest | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json` | `.opencode/opencode.json` | Same plugin identity and metadata; only the manifest entry point changes. |
+| Marketplace file | `.claude-plugin/marketplace.json` | `.agents/plugins/marketplace.json` | — | Codex uses a repo-scoped marketplace catalog; the plugin source stays local to this repo. |
+| OpenCode plugin | — | — | `.opencode/plugins/cmux-board.mjs` | First-class OpenCode plugin exposing `board.status`/`board.next`/`board.sync` custom tools + `shell.env`/`session.idle` hooks. |
+| Skills | `skills/*/SKILL.md` | `skills/*/SKILL.md` | `skills/*/SKILL.md` | Shared verbatim. |
+| Hooks | `hooks/hooks.json` | `hooks/hooks.json` | `hooks/hooks.json` | Shared verbatim (Claude/Codex); OpenCode uses native plugin hooks. |
+| Worker scripts | `skills/cmux-agent-workflows/scripts/*` | `skills/cmux-agent-workflows/scripts/*` | `skills/cmux-agent-workflows/scripts/*` | Shared backend-agnostic dispatch, wait, notify, and cleanup helpers. |
+| Board cache | `.tasks/*` | `.tasks/*` | `.tasks/*` | Shared cache and state model. |
+| Board logic | `bin/board-*` | `bin/board-*` | `bin/board-*` | Shared commands and label/state flow. |
 
 The only plugin-packaging split is the manifest and marketplace entry point.
 Everything else is reused as-is.
