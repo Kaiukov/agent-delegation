@@ -3,15 +3,15 @@
 # Replaces poll-push.sh as the PRIMARY wait; poll-push.sh is the fallback.
 #
 # Usage: poll-wait.sh --surface <ref> --branch <name> [--task <id>]
-#                     [--event-timeout <s>] [--total-timeout <s>]
+#                     [--cwd <path>] [--event-timeout <s>] [--total-timeout <s>]
 #
 # How it works:
-#   1. Start cmux events | grep in background (blocks on kernel events, no CPU).
-#   2. Start a watchdog (sleep + kill) for the event listener.
+#   1. Start cmux events → ev.raw file in background; capture real PID (no leak).
+#   2. Start a watchdog (sleep + kill) for the cmux events process.
 #   3. Start poll-push.sh in background (sleeps 60s between polls).
-#   4. Poll with kill -0 at 1s intervals. First to finish wins.
-#      - Event match: grep writes to ev.result → method=event.
-#      - Watchdog kill: no ev.result written → continue waiting for poll.
+#   4. Poll at 1s intervals, scanning ev.raw with event_line_matches() (respects
+#      --cwd filter). First to finish wins.
+#      - Event match: method=event.
 #      - Poll push: poll.out has PUSHED → method=poll.
 #   5. On total timeout: kill all, report TIMEOUT.
 #
@@ -26,7 +26,7 @@
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "$DIR/lib.sh"
 
-SURFACE=""; BRANCH=""; TASK=""; EVENT_TIMEOUT=120; TOTAL_TIMEOUT=1800
+SURFACE=""; BRANCH=""; TASK=""; CWD=""; CWD_BASENAME=""; EVENT_TIMEOUT=120; TOTAL_TIMEOUT=1800
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --surface) SURFACE="$2"; shift 2 ;;
@@ -34,12 +34,32 @@ while [[ $# -gt 0 ]]; do
     --task)    TASK="$2"; shift 2 ;;
     --event-timeout) EVENT_TIMEOUT="$2"; shift 2 ;;
     --total-timeout) TOTAL_TIMEOUT="$2"; shift 2 ;;
-    --quiet) LOG_LEVEL=quiet; shift ;;
+    --cwd)     CWD="$2"; CWD_BASENAME="$(basename "$2")"; shift 2 ;;
+    --quiet)   LOG_LEVEL=quiet; shift ;;
     *) shift ;;
   esac
 done
 
-[[ -n "$SURFACE" && -n "$BRANCH" ]] || die "usage: poll-wait.sh --surface <ref> --branch <name> [--task <id>] [--event-timeout <s>] [--total-timeout <s>]"
+[[ -n "$SURFACE" && -n "$BRANCH" ]] || die "usage: poll-wait.sh --surface <ref> --branch <name> [--task <id>] [--cwd <path>] [--event-timeout <s>] [--total-timeout <s>]"
+
+# ── event_line_matches: testable match function for the wait loop ──
+# Returns 0 if the line matches the event pattern AND, when cwd_basename
+# is given, also contains that basename as a fixed-string substring.
+# This prevents cross-wake between parallel workers (#92).
+event_line_matches() {
+  local line="$1" pattern="$2" cwd_basename="${3:-}"
+  # Must match the base event pattern (Stop / idle / CTB-DONE)
+  if ! grep -qE "$pattern" <<<"$line"; then
+    return 1
+  fi
+  # When a cwd filter is active, require the worktree basename in the line
+  if [[ -n "$cwd_basename" ]]; then
+    if ! grep -qF "$cwd_basename" <<<"$line"; then
+      return 1
+    fi
+  fi
+  return 0
+}
 
 EVENT_PATTERN='(lifecycle.*idle|hook_event_name.*Stop|CTB-DONE.*task=)'
 if [[ -n "$TASK" ]]; then
@@ -59,28 +79,20 @@ else
 fi
 
 # ── background event listener (design §3.2 step 1) ──
-# Bash-native watchdog replaces GNU timeout. The event listener writes a result
-# file on grep match; the watchdog only kills the process — NO result file means
-# the listener was killed by timeout, so we fall through to the poll path.
+# cmux events writes to ev.raw. The wait loop scans it with
+# event_line_matches() so --cwd filtering is applied inline.
+# The watchdog kills the REAL cmux events PID (no subshell leak).
 if $EVENT_ENABLED; then
-  # The event stream can carry either agent lifecycle idle or the explicit
-  # CTB-DONE notification body. The latter is the Codex completion path.
-  # NOTE: set +o pipefail inside the subshell prevents the upstream cmux
-  # SIGPIPE (exit 141) from masking a successful grep match (exit 0).
-  # Without this, set -euo pipefail at the script level would abort the
-  # subshell before echo ever runs, making the event path silently dead.
-  (
-    set +o pipefail
-    if cmux events --category agent --category notification --no-heartbeat 2>/dev/null \
-         | grep -m1 -E "$EVENT_PATTERN" \
-         > /dev/null 2>&1; then
-      echo "event" > "$TMPDIR/ev.result"
-    fi
-  ) &
+  # Write the cmux event stream to a temp file so we capture the REAL
+  # cmux events PID — not a subshell wrapper.  The old subshell+pipe
+  # approach leaked `cmux events` children because the EXIT trap only
+  # killed the wrapper subshell, not the real listener process (#92).
+  cmux events --category agent --category notification --no-heartbeat \
+    > "$TMPDIR/ev.raw" 2>/dev/null &
   EVENT_PID=$!
 
-  # Watchdog: kill the event listener after EVENT_TIMEOUT seconds.
-  # If grep already matched, the kill fails silently (process already dead).
+  # Watchdog: kill the real cmux events process after EVENT_TIMEOUT.
+  # If a match was already found in the wait loop, the kill is a no-op.
   (
     sleep "$EVENT_TIMEOUT"
     kill $EVENT_PID 2>/dev/null || true
@@ -92,19 +104,27 @@ fi
 "$DIR/poll-push.sh" "$BRANCH" 60 "$TOTAL_TIMEOUT" > "$TMPDIR/poll.out" 2>&1 &
 POLL_PID=$!
 
-# ── wait loop: poll for the result file OR poller completion ──
-# ev.result is written ONLY on a real grep match — never on watchdog timeout.
-# This prevents the script from falsely reporting method=event when the event
-# listener is killed by the watchdog (or when the event listener's command
-# fails to start because cmux/other deps are missing).
+# ── wait loop: scan ev.raw for matching event OR poller completion ──
+# The event file is scanned each iteration with event_line_matches().
+# If the watchdog kills cmux events, ev.raw stops growing; we fall through
+# to the poll path naturally (no false-positive event matches).
 ELAPSED=0
 while (( ELAPSED < TOTAL_TIMEOUT )); do
-  # Check if event listener produced a result (real grep match)
-  if $EVENT_ENABLED && [[ -f "$TMPDIR/ev.result" ]]; then
-    kill $POLL_PID 2>/dev/null || true
-    METHOD=event
-    SUCCESS=0
-    break
+  # Scan the event file for a matching line (respects --cwd filter)
+  if $EVENT_ENABLED && [[ -f "$TMPDIR/ev.raw" ]]; then
+    ev_matched=1
+    while IFS= read -r line; do
+      if event_line_matches "$line" "$EVENT_PATTERN" "${CWD_BASENAME:-}"; then
+        ev_matched=0
+        break
+      fi
+    done < "$TMPDIR/ev.raw"
+    if [[ $ev_matched -eq 0 ]]; then
+      kill $POLL_PID 2>/dev/null || true
+      METHOD=event
+      SUCCESS=0
+      break
+    fi
   fi
 
   # Check if poller finished (push detected or poll timeout)
