@@ -3,13 +3,13 @@
 Pi ships with five built-in role profiles. Each is a pure configuration mapping
 to `{provider, model, thinking, tools}` for `pi --provider … --model … --thinking … --tools …`.
 
-| Profile       | Provider     | Model                | Thinking | Tools                              | When to use                              |
-|---------------|--------------|----------------------|----------|------------------------------------|------------------------------------------|
-| `backend`     | opencode-go  | deepseek-v4-pro      | high     | read,bash,edit,write,grep,find,ls  | Heavy backend logic, refactors, systems |
-| `frontend`    | anthropic    | claude-sonnet-4-6 TBC| medium   | read,bash,edit,write,grep,find,ls  | UI code, styling, component work        |
-| `frontend-top`| anthropic    | claude-opus-4-8 TBC  | medium   | read,bash,edit,write,grep,find,ls  | Complex frontend architecture, hard UI bugs |
-| `review`      | openai-codex | gpt-5.4              | high     | read,bash,grep,find,ls             | Code review, diff analysis, audits      |
-| `docs`        | opencode-go  | deepseek-v4-flash    | low      | read,bash,edit,write,grep,find,ls  | Documentation, markdown, prose          |
+| Profile       | Provider     | Model                | Thinking | Tools                              | Status   | When to use                              |
+|---------------|--------------|----------------------|----------|------------------------------------|----------|------------------------------------------|
+| `backend`     | opencode-go  | deepseek-v4-pro      | high     | read,bash,edit,write,grep,find,ls  | verified | Heavy backend logic, refactors, systems |
+| `frontend`    | anthropic    | claude-sonnet-4-6    | medium   | read,bash,edit,write,grep,find,ls  | TBC      | UI code, styling, component work        |
+| `frontend-top`| anthropic    | claude-opus-4-8      | medium   | read,bash,edit,write,grep,find,ls  | TBC      | Complex frontend architecture, hard UI bugs |
+| `review`      | openai-codex | gpt-5.4              | high     | read,bash,grep,find,ls             | verified | Code review, diff analysis, audits      |
+| `docs`        | opencode-go  | deepseek-v4-flash    | low      | read,bash,edit,write,grep,find,ls  | verified | Documentation, markdown, prose          |
 
 ## Resolution
 
