@@ -196,13 +196,23 @@ else
     fail "damage-control.ts reference is NOT pi-guarded"
   fi
 
-  # Verify the extension file exists at the repo root (same path resolution
-  # as agent-spawn.sh: 5x .. up from its script directory to repo root).
-  ext_path="$GIT_ROOT/.pi/extensions/damage-control.ts"
-  if [[ -f "$ext_path" ]]; then
-    pass "damage-control.ts found at repo root: $ext_path"
+  # HARDEN: extract the --extension path from the #91 block, resolve it
+  # relative to agent-spawn.sh's own directory, and assert the file exists.
+  # This catches path-depth regressions (e.g. 4x .. instead of 5x ..).
+  raw_ext_path="$(sed -n '/# --- #91/,/# --- end #91/p' "$AGENT_SPAWN" \
+    | grep 'damage-control.ts' \
+    | sed 's/.*"\$DIR\/\([^"]*\)".*/\1/' \
+    | head -1)"
+  if [[ -n "$raw_ext_path" ]]; then
+    spawn_dir="$(dirname "$AGENT_SPAWN")"
+    resolved_ext="$spawn_dir/$raw_ext_path"
+    if [[ -f "$resolved_ext" ]]; then
+      pass "damage-control.ts resolved from #91 block → $resolved_ext"
+    else
+      fail "damage-control.ts NOT FOUND from #91 block: $resolved_ext (raw: $raw_ext_path)"
+    fi
   else
-    fail "damage-control.ts NOT FOUND at: $ext_path"
+    fail "could not extract --extension path from #91 block"
   fi
 fi
 
