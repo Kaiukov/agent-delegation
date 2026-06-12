@@ -5,6 +5,11 @@ This project adheres to semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+- Completion-wait now filters the cmux event stream by worker cwd (no cross-wake
+  between parallel workers) and tears down its event listener without leaking
+  `cmux events` processes (#92).
+
 ## [0.6.0] - 2026-06-12
 
 ### Added
