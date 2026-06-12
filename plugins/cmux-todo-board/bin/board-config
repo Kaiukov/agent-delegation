@@ -4,6 +4,8 @@ set -euo pipefail
 DEFAULT_LANG="EN"
 DEFAULT_MODELS_JSON='{"flash":"opencode/deepseek-v4-flash-free","pro":"opencode-go/deepseek-v4-pro","review":"gpt-5.4","simple":"gpt-5.4-mini","top":"gpt-5.5"}'
 VALID_TIERS=(flash pro review simple top)
+# TBC: frontend (claude-sonnet-4-6) and frontend-top (claude-opus-4-8) model IDs
+# not yet user-confirmed against `pi --list-models`. Verify before production use.
 DEFAULT_PROFILES_JSON='{"backend":{"provider":"opencode-go","model":"deepseek-v4-pro","thinking":"high","tools":"read,bash,edit,write,grep,find,ls"},"frontend":{"provider":"anthropic","model":"claude-sonnet-4-6","thinking":"medium","tools":"read,bash,edit,write,grep,find,ls"},"frontend-top":{"provider":"anthropic","model":"claude-opus-4-8","thinking":"medium","tools":"read,bash,edit,write,grep,find,ls"},"review":{"provider":"openai-codex","model":"gpt-5.4","thinking":"high","tools":"read,bash,grep,find,ls"},"docs":{"provider":"opencode-go","model":"deepseek-v4-flash","thinking":"low","tools":"read,bash,edit,write,grep,find,ls"}}'
 VALID_PROFILES=(backend frontend frontend-top review docs)
 CONFIG_FILE=".tasks/config.json"
