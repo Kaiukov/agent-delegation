@@ -44,10 +44,11 @@ provider="$(echo "$json" | jq -r '.provider')"
 thinking="$(echo "$json" | jq -r '.thinking')"
 tools="$(echo "$json" | jq -r '.tools')"
 model="$(echo "$json" | jq -r '.model')"
-if [[ "$provider" == "opencode-go" && "$thinking" == "high" && "$tools" == "read,bash,edit,write,grep,find,ls" && -n "$model" ]]; then
-  echo "PASS  (provider=$provider thinking=$thinking tools=$tools model=$model)"
+model_status="$(echo "$json" | jq -r '.model_status // empty')"
+if [[ "$provider" == "opencode-go" && "$thinking" == "high" && "$tools" == "read,bash,edit,write,grep,find,ls" && -n "$model" && -z "$model_status" ]]; then
+  echo "PASS  (provider=$provider thinking=$thinking tools=$tools model=$model model_status=absent)"
 else
-  echo "FAIL: provider=$provider thinking=$thinking tools=$tools model=$model"
+  echo "FAIL: provider=$provider thinking=$thinking tools=$tools model=$model model_status=$model_status"
   failures=$((failures + 1))
 fi
 cleanup_testdir
@@ -59,23 +60,31 @@ echo "=== Test 2: all 5 profiles resolve correctly ==="
 new_testdir
 all_ok=true
 check_profile() {
-  local profile="$1" exp_provider="$2" exp_thinking="$3" exp_tools="$4"
-  local json provider thinking tools
+  local profile="$1" exp_provider="$2" exp_thinking="$3" exp_tools="$4" exp_model_status="${5:-}"
+  local json provider thinking tools model_status
   json="$("$BOARD_CONFIG" --get-profile "$profile" --json 2>&1)"
   provider="$(echo "$json" | jq -r '.provider')"
   thinking="$(echo "$json" | jq -r '.thinking')"
   tools="$(echo "$json" | jq -r '.tools')"
-  if [[ "$provider" == "$exp_provider" && "$thinking" == "$exp_thinking" && "$tools" == "$exp_tools" ]]; then
+  model_status="$(echo "$json" | jq -r '.model_status // empty')"
+  local ok=true
+  [[ "$provider" == "$exp_provider" && "$thinking" == "$exp_thinking" && "$tools" == "$exp_tools" ]] || ok=false
+  if [[ -n "$exp_model_status" ]]; then
+    [[ "$model_status" == "$exp_model_status" ]] || ok=false
+  else
+    [[ -z "$model_status" ]] || ok=false
+  fi
+  if $ok; then
     echo "  $profile: PASS"
     return 0
   else
-    echo "  $profile: FAIL — got provider=$provider thinking=$thinking tools=$tools"
+    echo "  $profile: FAIL — got provider=$provider thinking=$thinking tools=$tools model_status=$model_status"
     return 1
   fi
 }
 check_profile backend opencode-go high "read,bash,edit,write,grep,find,ls" || all_ok=false
-check_profile frontend anthropic medium "read,bash,edit,write,grep,find,ls" || all_ok=false
-check_profile frontend-top anthropic medium "read,bash,edit,write,grep,find,ls" || all_ok=false
+check_profile frontend anthropic medium "read,bash,edit,write,grep,find,ls" TBC || all_ok=false
+check_profile frontend-top anthropic medium "read,bash,edit,write,grep,find,ls" TBC || all_ok=false
 check_profile review openai-codex high "read,bash,grep,find,ls" || all_ok=false
 check_profile docs opencode-go low "read,bash,edit,write,grep,find,ls" || all_ok=false
 if $all_ok; then
@@ -104,16 +113,17 @@ cleanup_testdir
 echo "=== Test 4: override one field (thinking), others keep default ==="
 new_testdir
 # Set up a config that overrides only thinking for backend
-echo '{"profiles":{"backend":{"thinking":"low"}}}' > .tasks/config.json
+echo '{"profiles":{"backend":{"thinking":"minimal"}}}' > .tasks/config.json
 json="$("$BOARD_CONFIG" --get-profile backend --json 2>&1)"
 provider="$(echo "$json" | jq -r '.provider')"
 thinking="$(echo "$json" | jq -r '.thinking')"
 tools="$(echo "$json" | jq -r '.tools')"
-# Provider should still be the default opencode-go, thinking overridden to low
-if [[ "$provider" == "opencode-go" && "$thinking" == "low" && "$tools" == "read,bash,edit,write,grep,find,ls" ]]; then
-  echo "PASS  (provider=$provider thinking=$thinking tools=$tools)"
+model="$(echo "$json" | jq -r '.model')"
+# Provider/model/tools should keep defaults; thinking overridden to minimal
+if [[ "$provider" == "opencode-go" && "$thinking" == "minimal" && "$tools" == "read,bash,edit,write,grep,find,ls" && "$model" == "deepseek-v4-pro" ]]; then
+  echo "PASS  (provider=$provider thinking=$thinking tools=$tools model=$model)"
 else
-  echo "FAIL: provider=$provider thinking=$thinking tools=$tools"
+  echo "FAIL: provider=$provider thinking=$thinking tools=$tools model=$model"
   failures=$((failures + 1))
 fi
 cleanup_testdir
@@ -229,6 +239,57 @@ else
   echo "FAIL: got '$cmd'"
   failures=$((failures + 1))
 fi
+
+# ══════════════════════════════════════════════════════════════════════
+# Test 11: full Pi thinking enum (off|minimal|low|medium|high|xhigh)
+# ══════════════════════════════════════════════════════════════════════
+echo "=== Test 11: full Pi thinking enum (off|minimal|low|medium|high|xhigh) ==="
+for level in off minimal low medium high xhigh; do
+  cmd="$(agent_launch_cmd pi "/tmp/wt" "p/m" "$level" "t1,t2")"
+  if [[ "$cmd" == *"--thinking $level --tools t1,t2"* ]]; then
+    echo "  thinking=$level: PASS"
+  else
+    echo "  thinking=$level: FAIL — got '$cmd'"
+    failures=$((failures + 1))
+  fi
+done
+
+# ══════════════════════════════════════════════════════════════════════
+# Test 12: end-to-end: resolved pi command from a profile contains
+#          --provider / --model / --thinking / --tools and NEVER --profile
+# ══════════════════════════════════════════════════════════════════════
+echo "=== Test 12: end-to-end profile→pi command ==="
+new_testdir
+# Simulate what agent-spawn.sh does when --profile backend is used
+profile_json="$("$BOARD_CONFIG" --get-profile backend --json 2>&1)"
+provider="$(echo "$profile_json" | jq -r '.provider')"
+model="$(echo "$profile_json" | jq -r '.model')"
+thinking="$(echo "$profile_json" | jq -r '.thinking')"
+tools="$(echo "$profile_json" | jq -r '.tools')"
+pi_model="$provider/$model"
+cmd="$(agent_launch_cmd pi "/tmp/wt" "$pi_model" "$thinking" "$tools")"
+if [[ "$cmd" == *"--provider $provider"* && "$cmd" == *"--model $model"* && "$cmd" == *"--thinking $thinking"* && "$cmd" == *"--tools $tools"* ]]; then
+  echo "  flags present: PASS"
+else
+  echo "  flags present: FAIL — got '$cmd'"
+  failures=$((failures + 1))
+fi
+if [[ "$cmd" != *"--profile"* ]]; then
+  echo "  no --profile: PASS"
+else
+  echo "  no --profile: FAIL — --profile leaked into '$cmd'"
+  failures=$((failures + 1))
+fi
+# Also verify that a non-pi caller whose first extra arg is a thinking word
+# is unaffected (the word stays as an extra arg, not consumed as thinking).
+codex_cmd="$(agent_launch_cmd codex "/tmp/wt" "gpt-5-codex" low medium)"
+if [[ "$codex_cmd" == *"low medium"* ]]; then
+  echo "  codex passthrough: PASS"
+else
+  echo "  codex passthrough: FAIL — got '$codex_cmd'"
+  failures=$((failures + 1))
+fi
+cleanup_testdir
 
 echo ""
 if [[ $failures -eq 0 ]]; then
