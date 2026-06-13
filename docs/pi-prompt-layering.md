@@ -19,8 +19,20 @@ repo-specific content.
 ### Layer 2 — per-role guidance assets (`roles/*.md`)
 Tiny files (~15–20 lines each) containing only what differs by role: mission,
 allowed and prohibited work, verification emphasis, and output expectations.
-They never repeat common-system rules. Each file aligns with a profile defined
-in the #102 profile resolver (`board-config --get-profile`).
+They never repeat common-system rules.
+
+The asset loaded is chosen by the profile's **`role` field**, not the profile
+name. This decouples the asset filename from the profile identity: multiple
+profiles can share the same role asset (e.g. `backend-fast`, `test`, and
+`tiny-patch` all use `roles/backend.md`). The mapping is:
+
+| Role          | Asset file                          | Profiles using it                                   |
+|---------------|-------------------------------------|-----------------------------------------------------|
+| `backend`     | `prompts/pi/roles/backend.md`       | backend, backend-fast, test, tiny-patch             |
+| `docs`        | `prompts/pi/roles/docs.md`          | docs                                                |
+| `frontend`    | `prompts/pi/roles/frontend.md`      | frontend                                            |
+| `frontend-top`| `prompts/pi/roles/frontend-top.md`  | frontend-top                                        |
+| `review`      | `prompts/pi/roles/review.md`        | review, repo-scout                                  |
 
 ### Layer 3 — task spec (`.task-spec.md`)
 Carries ALL repo- and task-specific information: the task description, exact
@@ -66,6 +78,8 @@ Orchestrator                    agent-spawn.sh                 Pi Worker
    --profile <name>
 
                                2. Resolve profile (#102)
+                                  → {provider, model, thinking,
+                                     tools, role}
 
                                3. Build extra args:
                                   --append-system-prompt
