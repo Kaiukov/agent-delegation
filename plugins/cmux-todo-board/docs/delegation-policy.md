@@ -1,19 +1,25 @@
 # Delegation Model Policy
 
-> **Note:** codex / GPT weekly budget is PAUSED until **2026-06-11**. Until then,
-> default to opencode deepseek. Before delegating, check the canonical
-> `docs/models.json` for fresh model ids.
+> Models come from the profile table in `bin/board-config`
+> (`--get-profile <name> --json`) and the live `board-model catalog`. Paid
+> profiles (`frontend`, `frontend-top`) are gated behind explicit user permission.
 
 ## Model Profiles
 
-| Profile | Model | Role |
-|------|-------|------|
-| **backend-fast** | `opencode/deepseek-v4-flash-free` | Mechanics, docs, routine, glue/config/tests. Default free worker (replaces paid deepseek-v4-flash). |
-| **backend** | `opencode-go/deepseek-v4-pro` | Complex / reasoning-heavy / finance-critical: main IMPLEMENT role. |
-| **review** | `opencode-go/deepseek-v4-pro` | REVIEW of heavy/financial PRs after implementation. |
-| **docs** | `opencode/mimo-v2.5-free` | Documentation tasks. Free worker. |
-| **test** | `openai-codex/gpt-5.4-mini` | Test authoring and execution. |
-| **tiny-patch** | `openai-codex/gpt-5.4-mini` | Small targeted patches. |
+Each profile loads its prompt asset from `prompts/pi/roles/<role>.md`; multiple
+profiles may reuse one role.
+
+| Profile | Provider / Model | Thinking | Role asset | Use |
+|---|---|---|---|---|
+| backend | `opencode-go/deepseek-v4-pro` | high | backend | Complex / reasoning-heavy: main IMPLEMENT. |
+| backend-fast | `opencode/deepseek-v4-flash-free` | low | backend | Mechanics, glue, routine. Default free worker. |
+| repo-scout | `opencode/nemotron-3-ultra-free` | medium | review | Read-only repo reconnaissance (no write tools). |
+| docs | `opencode/mimo-v2.5-free` | low | docs | Documentation. Free worker. |
+| test | `openai-codex/gpt-5.4-mini` | medium | backend | Test authoring/execution. |
+| tiny-patch | `openai-codex/gpt-5.4-mini` | low | backend | Small targeted patches. |
+| review | `opencode-go/deepseek-v4-pro` | high | review | REVIEW of heavy PRs (read-only). |
+| frontend | `anthropic/claude-sonnet-4-6` | medium | frontend | UI work. **Gated: user-permission** (paid). |
+| frontend-top | `anthropic/claude-opus-4-8` | high | frontend-top | Hard UI work. **Gated: user-permission** (paid). |
 
 ## Rules
 
