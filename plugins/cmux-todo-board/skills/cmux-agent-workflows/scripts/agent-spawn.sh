@@ -2,9 +2,10 @@
 # Split the current pane, boot an agent (opencode or codex) in a worktree, wait
 # until ready, and label the tab. Echoes the NEW surface ref on success.
 #
-# Usage: agent-spawn.sh <dir> <worktree> <model> [label] [extra agent args...] [--agent pi] [--profile <name>]
+# Usage: agent-spawn.sh <dir> <worktree> <model> [label] [extra agent args...] [--agent pi] [--profile <name>] [--slot <name|auto>]
 #   agent-spawn.sh right /Users/x/Code/mpc-108 opencode-go/deepseek-v4-pro 108
 #   agent-spawn.sh right /Users/x/Code/mpc-108 --profile backend 108
+#   agent-spawn.sh --slot worker-3 /Users/x/Code/wt-113 --profile backend 113
 #
 # The tab name is auto-assigned: a RANDOM rock band not already in use is picked
 # from the pool (so names never repeat across live agents — no manual naming).
@@ -18,9 +19,10 @@
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "$DIR/lib.sh"
 
-# --- arg parse: extract --agent + --profile (anywhere in argv) then positionals --------
+# --- arg parse: extract --agent + --profile + --slot (anywhere in argv) then positionals --------
 AGENT_KIND=""
 PROFILE=""
+SLOT=""
 ARGS=()
 while (( $# > 0 )); do
   case "$1" in
@@ -28,6 +30,8 @@ while (( $# > 0 )); do
     --agent=*) AGENT_KIND="${1#--agent=}"; shift ;;
     --profile) PROFILE="$2"; shift 2 ;;
     --profile=*) PROFILE="${1#--profile=}"; shift ;;
+    --slot) SLOT="$2"; shift 2 ;;
+    --slot=*) SLOT="${1#--slot=}"; shift ;;
     --quiet) LOG_LEVEL=quiet; shift ;;
     -h|--help)
       sed -n '2,17p' "$0"; exit 0 ;;
@@ -38,13 +42,18 @@ done
 if [[ -n "$PROFILE" ]]; then
   # --profile implies --agent pi
   [[ -z "$AGENT_KIND" ]] && AGENT_KIND="pi"
-  # --profile and explicit --model are mutually exclusive (model comes from profile)
-  # MODEL will be set from profile resolution below; detect if user passed a model positionally
-  (( ${#ARGS[@]} >= 2 )) || die "usage: agent-spawn.sh <dir> <worktree> --profile <name> [label] [extra agent args...]"
-  SPLIT="${ARGS[0]}"; WT="${ARGS[1]}"
-  # If a 3rd positional arg is present, it's a label (model is from profile, not positional)
-  LABEL="${ARGS[2]:-}"
-  EXTRA=("${ARGS[@]:3}")
+  if [[ -n "$SLOT" ]]; then
+    # Slot mode: first positional is worktree (no split direction needed)
+    (( ${#ARGS[@]} >= 1 )) || die "usage: agent-spawn.sh --slot <name> <worktree> [--profile <name>] [label]"
+    WT="${ARGS[0]}"; SPLIT="slot"
+    LABEL="${ARGS[1]:-}"
+    EXTRA=("${ARGS[@]:2}")
+  else
+    (( ${#ARGS[@]} >= 2 )) || die "usage: agent-spawn.sh <dir> <worktree> --profile <name> [label] [extra agent args...]"
+    SPLIT="${ARGS[0]}"; WT="${ARGS[1]}"
+    LABEL="${ARGS[2]:-}"
+    EXTRA=("${ARGS[@]:3}")
+  fi
   # Resolve profile via board-config
   REPO_ROOT="$(cd "$DIR/../../.." && pwd)"
   if ! PROFILE_JSON="$(REPO_ROOT="$REPO_ROOT" "$REPO_ROOT/bin/board-config" --get-profile "$PROFILE" --json 2>&1)"; then
@@ -56,11 +65,17 @@ if [[ -n "$PROFILE" ]]; then
   PROFILE_TOOLS="$(echo "$PROFILE_JSON" | jq -r '.tools')"
   log "profile model: $MODEL  thinking: $PROFILE_THINKING  tools: $PROFILE_TOOLS"
 else
-  (( ${#ARGS[@]} >= 3 )) || die "usage: agent-spawn.sh <dir> <worktree> <model> [label] [extra agent args...] [--agent pi] [--profile <name>]"
-  SPLIT="${ARGS[0]}"; WT="${ARGS[1]}"; MODEL="${ARGS[2]}"; LABEL="${ARGS[3]:-}"
-  # Any positionals after [label] are forwarded verbatim to the agent launch
-  # command (e.g. `-c model_reasoning_effort=high` for codex).
-  EXTRA=("${ARGS[@]:4}")
+  if [[ -n "$SLOT" ]]; then
+    # Slot mode without profile: first positional is worktree, second is model
+    (( ${#ARGS[@]} >= 2 )) || die "usage: agent-spawn.sh --slot <name> <worktree> <model> [label] [extra args...]"
+    WT="${ARGS[0]}"; MODEL="${ARGS[1]}"; SPLIT="slot"
+    LABEL="${ARGS[2]:-}"
+    EXTRA=("${ARGS[@]:3}")
+  else
+    (( ${#ARGS[@]} >= 3 )) || die "usage: agent-spawn.sh <dir> <worktree> <model> [label] [extra agent args...] [--agent pi] [--profile <name>]"
+    SPLIT="${ARGS[0]}"; WT="${ARGS[1]}"; MODEL="${ARGS[2]}"; LABEL="${ARGS[3]:-}"
+    EXTRA=("${ARGS[@]:4}")
+  fi
 fi
 [[ -d "$WT" ]] || die "worktree not found: $WT"
 
@@ -90,7 +105,52 @@ BAND="$(pick_band)"
 NAME="$BAND${LABEL:+ $LABEL}"
 log "auto-named agent: $NAME"
 
-# Try balanced grid layout — explicit target, never split orchestrator pane
+# --- cockpit slot lookup (#113) ---
+# When --slot <name|auto> is given, reuse a 3×3 cockpit slot instead of
+# creating a new pane split. The cockpit must be initialized first via
+# `cmux-dev-grid init` (creates .tasks/cockpit.json).
+if [[ -n "$SLOT" ]]; then
+  REPO_ROOT="$(cd "$DIR/../../.." && pwd)"
+  COCKPIT_FILE="$REPO_ROOT/.tasks/cockpit.json"
+  if [[ ! -f "$COCKPIT_FILE" ]]; then
+    die "cockpit not initialized: run cmux-dev-grid init first (no .tasks/cockpit.json)"
+  fi
+  if [[ "$SLOT" == "auto" ]]; then
+    # Pick the first slot with null value (unassigned or empty)
+    SLOT="$(python3 -c "
+import json
+with open('$COCKPIT_FILE') as f:
+    c = json.load(f)
+slots = c.get('slots', {})
+for name in ['worker-1','worker-2','worker-3','worker-4','worker-5','worker-6','worker-7','worker-8']:
+    if slots.get(name) is None:
+        print(name)
+        break
+" 2>/dev/null)"
+    if [[ -z "$SLOT" ]]; then
+      die "cockpit full: all 8 slots occupied — free a slot or spawn without --slot"
+    fi
+    log "auto-selected cockpit slot: $SLOT"
+  fi
+  # Look up the surface ref for this slot
+  SLOT_SURFACE="$(python3 -c "
+import json
+with open('$COCKPIT_FILE') as f:
+    c = json.load(f)
+s = c.get('slots', {}).get('$SLOT')
+if s:
+    print(s.get('surface_ref', ''))
+" 2>/dev/null)"
+  if [[ -z "$SLOT_SURFACE" ]]; then
+    die "slot '$SLOT' not found or has no surface — run cmux-dev-grid init"
+  fi
+  log "cockpit slot $SLOT → surface $SLOT_SURFACE"
+  SURFACE="$SLOT_SURFACE"
+  # Use slot name as the tab label
+  NAME="$SLOT${LABEL:+ $LABEL}"
+  cmux rename-tab --surface "$SURFACE" "$NAME" >&2 || true
+else
+# --- split (non-cockpit path) ---
 GRID_RESULT="$(grid_pick_split 2>/dev/null || true)"
 if [[ -n "$GRID_RESULT" ]]; then
   TARGET="${GRID_RESULT%% *}"
@@ -107,6 +167,7 @@ fi
 SURFACE="$(echo "$SPLIT_OUT" | grep -oE 'surface:[0-9]+' | head -1)"
 [[ -n "$SURFACE" ]] || die "could not determine new surface ref from output: $SPLIT_OUT"
 log "new surface: $SURFACE"
+fi  # end cockpit/split path
 
 cmux rename-tab --surface "$SURFACE" "$NAME" >&2 || true
 # Pre-seed Pi trust so it doesn't show a trust prompt for this worktree.
