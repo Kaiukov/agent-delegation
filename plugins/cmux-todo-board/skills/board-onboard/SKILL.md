@@ -31,7 +31,7 @@ You **coordinate**, you do not implement.
   - **Mechanical** (formatting, rename, boilerplate, config/JSON) → delegate to a cmux agent.
   **If a task can be delegated, delegate it.**
   Token-budget accounting is future work.
-- **Model tiers:** see `docs/delegation-policy.md` for the current delegation model tiers and rules.
+- **Model profiles:** see `docs/delegation-policy.md` for the current delegation model profiles and rules.
 - **Never hand-edit CHANGELOG.md.** Agents do it via the `## CHANGELOG` section in their task spec.
 - **Never merge on an agent's self-report.** Run the hard gate yourself (the
   project's tests + `claude plugin validate .` / typecheck) before merging.
@@ -76,8 +76,8 @@ script-based workflow. Full script documentation lives in `cmux-agent-workflows`
 
 > **On-demand detail — task spec placement:** The `.task-spec.md` MUST live inside the agent
 > worktree (`<worktree>/.task-spec.md`), never `/tmp` or external dirs, to avoid
-> 'Access external directory' permission prompts. Model tiers are resolved via
-> `board-config --get-model <tier>`.
+> 'Access external directory' permission prompts. Model profiles are resolved via
+> `board-config --get-profile <name)`.
 
 ## 5. On invocation
 

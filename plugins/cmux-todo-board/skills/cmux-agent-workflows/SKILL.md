@@ -72,11 +72,11 @@ See the [canonical delegation cycle in `docs/ORCHESTRATOR.md`](../../docs/ORCHES
   never repeat across concurrent agents and you never pick one by hand.
 - **Hard gate before merge**: run `verify.sh` (or `verify-ts.sh` for TS projects).
   Never merge on the agent's self-report.
-- **Model tiers** are config-driven via `.tasks/config.json` (see `bin/board-config --get-model <tier>`).
-  Five tiers are defined — `flash` (mechanical), `pro` (reasoning), `review`, `simple`, and `top` —
-  each mapped to a model id in the config or falling back to built-in defaults.
-  Pass the tier name directly as the `<model>` arg to `agent-spawn.sh`; it resolves
-  automatically. Raw model ids still work unchanged.
+- **Model profiles** are config-driven via `.tasks/config.json` (see `bin/board-config --get-profile <name>`).
+  Profiles are defined for each role — `backend`, `backend-fast`, `docs`, `review`, `test`, `tiny-patch`,
+  `repo-scout`, `frontend`, `frontend-top` — each carrying the full Pi launch contract (provider, model,
+  thinking, tools). Use `agent-spawn.sh --profile <name>` to dispatch; it resolves automatically.
+  Raw model ids still work unchanged.
 
 
 
