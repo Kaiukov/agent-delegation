@@ -28,6 +28,7 @@ profiles may reuse one role.
 - Finance-critical pipeline: backend IMPLEMENT → review REVIEW.
 - Hard gate is ALWAYS the orchestrator's: independently verify agent output (typecheck + tests + live DB/KV) before merge; never trust self-report.
 - ≤2 agents in flight at once.
+- One agent/worker may own only one active task at a time. Never multiplex multiple issues onto the same running worker; queue or spawn another worker within the cap.
 
 ## Avoid / Unverified
 

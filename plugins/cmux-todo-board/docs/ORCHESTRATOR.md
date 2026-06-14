@@ -20,6 +20,7 @@ Default working language: EN. Board generates issues/docs in EN unless overridde
 - **Never hand-edit CHANGELOG.md.** Delegating agent's responsibility via `## CHANGELOG` in task spec.
 - **Live deploys / DB / KV mutations = orchestrator-only.** Agents unit-test on mocks; real deploy/migration/`--remote` write done by you with explicit user confirmation each time.
 - **One `in_progress` only.** Keep ≤1 `in_progress` in built-in task list. Real parallelism tracked by the count of live background worker processes.
+- **One worker = one active task.** Never stack a second task onto an already-running worker/session/process. A worker must finish, fail, or be killed before it receives another task. If more work exists, spawn another worker (within the active-worker cap) or queue the task.
 
 ## Token efficiency
 
@@ -58,7 +59,7 @@ For each task you execute:
 
 1. **Worktree** off `origin/main` (sibling dir, carries `.env`).
 2. **Launch** the worker with `worker-spawn.sh <worktree> --profile <name>` (or `worker-spawn.sh <worktree> <provider/model>`); it backgrounds `pi -p --mode json -a` in the worktree and echoes the PID.
-3. **Dispatch** task spec — MUST live inside the worker worktree (`<worktree>/.task-spec.md`), never `/tmp`/external dirs, to avoid permission prompts. Use compact format (below).
+3. **Dispatch exactly one task** to that worker. The task spec MUST live inside the worker worktree (`<worktree>/.task-spec.md`), never `/tmp`/external dirs, to avoid permission prompts. Do not append a second issue/follow-up while the worker is still busy; start a new worker or wait.
 4. **Standby after dispatch.** Wait for a new commit on the branch (git progress) as the completion signal, with the worker process exit as an auxiliary cue. Headless kill is `kill <PID>`.
 5. **Verify independently** — hard gate: run tests + validation. Do not trust the worker's word.
 6. **Live-check** real resources (deploy / `--remote` / migration) yourself.
