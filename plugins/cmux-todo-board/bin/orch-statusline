@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# orch-statusline — Claude Code statusLine: list of running orchestrator agents.
+# Reads stdin (Claude Code session JSON, used only for cwd), then derives live
+# agents from tmux `orch-*` sessions cross-referenced with their run records:
+#   .tasks/orchestrator/runs/<issue>-<role>-<timestamp>.json
+# Output (one line):  🤖 orch-153-backend · openai-codex/gpt-5.4-mini · reconcile V1 seams [running]
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+input="$(cat 2>/dev/null || true)"
+cwd=""
+if command -v jq >/dev/null 2>&1 && [[ -n "$input" ]]; then
+  cwd="$(jq -r '.workspace.current_dir // .cwd // empty' <<<"$input" 2>/dev/null || true)"
+fi
+[[ -n "$cwd" ]] || cwd="$PWD"
+
+runs=""
+# Canonical location: plugin root next to orch-tmux-spawn/orch-tmux-runner.
+if [[ -d "$PLUGIN_ROOT/.tasks/orchestrator/runs" ]]; then
+  runs="$PLUGIN_ROOT/.tasks/orchestrator/runs"
+else
+  # Legacy fallback: walk up from cwd to support the pre-relocation layout.
+  d="$cwd"
+  for _ in 1 2 3 4 5 6; do
+    if [[ -d "$d/.tasks/orchestrator/runs" ]]; then runs="$d/.tasks/orchestrator/runs"; break; fi
+    d="$(dirname "$d")"; [[ "$d" == "/" ]] && break
+  done
+fi
+
+# Live agent sessions (tmux is transport-liveness only).
+sessions=()
+if command -v tmux >/dev/null 2>&1; then
+  while IFS= read -r s; do [[ -n "$s" ]] && sessions+=("$s"); done \
+    < <(tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^orch-' || true)
+fi
+
+if (( ${#sessions[@]} == 0 )); then
+  printf '🟢 orchestrator idle — no agents running'
+  exit 0
+fi
+
+parts=()
+for s in "${sessions[@]}"; do
+  key="${s#orch-}"                       # <issue>-<role>
+  model="?"; task=""; state="running"
+  if [[ -n "$runs" ]]; then
+    f="$(ls -t "$runs/$key-"*.json 2>/dev/null | head -1 || true)"
+    if [[ -n "$f" && -s "$f" ]]; then
+      model="$(jq -r '.model // ((.profile.provider // "?")+"/"+(.profile.model // "?"))' "$f" 2>/dev/null || echo "?")"
+      task="$(jq -r '.task // empty' "$f" 2>/dev/null || true)"
+      state="$(jq -r '.status // "running"' "$f" 2>/dev/null || echo running)"
+    fi
+  fi
+  line="$s · $model"
+  [[ -n "$task" ]] && line="$line · $task"
+  line="$line [$state]"
+  parts+=("$line")
+done
+
+# One line; join multiple agents with a separator.
+out="🤖 ${parts[0]}"
+for ((i=1; i<${#parts[@]}; i++)); do out="$out  │  ${parts[$i]}"; done
+printf '%s' "$out"

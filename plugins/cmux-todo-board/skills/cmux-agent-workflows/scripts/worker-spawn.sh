@@ -6,8 +6,8 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; source "$DIR/lib.sh"
 
 usage() {
   cat >&2 <<'EOF'
-usage: worker-spawn.sh <worktree> --profile <name> [label]
-       worker-spawn.sh <worktree> <model> [label]
+usage: worker-spawn.sh <worktree> --profile <name> [label] [--thinking <level>] [--tools <csv>] [--role <name>]
+       worker-spawn.sh <worktree> <model> [label] [--thinking <level>] [--tools <csv>] [--role <name>]
 EOF
 }
 
@@ -45,11 +45,20 @@ parse_raw_model() {
 }
 
 PROFILE=""
+THINKING_OVERRIDE=""
+TOOLS_OVERRIDE=""
+ROLE_OVERRIDE=""
 ARGS=()
 while (( $# > 0 )); do
   case "$1" in
     --profile) [[ $# -ge 2 ]] || { usage; exit 2; }; PROFILE="$2"; shift 2 ;;
     --profile=*) PROFILE="${1#--profile=}"; shift ;;
+    --thinking) [[ $# -ge 2 ]] || { usage; exit 2; }; THINKING_OVERRIDE="$2"; shift 2 ;;
+    --thinking=*) THINKING_OVERRIDE="${1#--thinking=}"; shift ;;
+    --tools) [[ $# -ge 2 ]] || { usage; exit 2; }; TOOLS_OVERRIDE="$2"; shift 2 ;;
+    --tools=*) TOOLS_OVERRIDE="${1#--tools=}"; shift ;;
+    --role) [[ $# -ge 2 ]] || { usage; exit 2; }; ROLE_OVERRIDE="$2"; shift 2 ;;
+    --role=*) ROLE_OVERRIDE="${1#--role=}"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) ARGS+=("$1"); shift ;;
   esac
@@ -90,6 +99,10 @@ else
   PROVIDER="${PROVIDER_MODEL%% *}"
   MODEL="${PROVIDER_MODEL#* }"
 fi
+
+[[ -n "$THINKING_OVERRIDE" ]] && THINKING="$THINKING_OVERRIDE"
+[[ -n "$TOOLS_OVERRIDE" ]] && TOOLS="$TOOLS_OVERRIDE"
+[[ -n "$ROLE_OVERRIDE" ]] && ROLE="$ROLE_OVERRIDE"
 
 PROMPTS_DIR="$DIR/../../../prompts/pi"
 log "launching headless pi worker"
