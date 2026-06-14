@@ -45,7 +45,7 @@ overrides from `.profiles.<name>` in `.tasks/config.json`. Each field
 
 Profiles are the single source of truth for model configuration. They carry
 the full Pi launch contract (provider, model, thinking level, tool set) and
-are consumed by `agent-spawn.sh --profile <name>` at dispatch time.
+are consumed by `worker-spawn.sh --profile <name>` at dispatch time.
 
 ## Default language rule
 

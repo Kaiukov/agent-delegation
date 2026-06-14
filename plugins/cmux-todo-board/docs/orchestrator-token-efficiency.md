@@ -49,7 +49,7 @@ Every read/inspection tool call must minimise output size. Rules:
 | Rule | Detail |
 |---|---|
 | **Max direct read** | Default ≤120 lines. If more is needed, use targeted ranges. |
-| **Final worker screen** | `agent-screen.sh <surface> <N>` — N ≤ 40 lines. |
+| **Final worker status** | `worker-watch.sh --pid <PID> --out <WT>/out.json --worktree <WT>` — read only the bounded status/output. |
 | **Target ranges** | Use `sed -n 'a,bp' <file>` or `rg -n <pattern> <file>` to extract only the lines needed. |
 | **Select keys** | Use `jq '.<key>'` or `jq '{key1, key2}'` instead of reading full JSON files. |
 | **Diff before full read** | Always run `git diff --stat` or `git diff --name-only` before a full `git diff`. Read the full diff only when necessary. |

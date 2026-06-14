@@ -37,34 +37,17 @@ cmux notify --title "CTB-DONE" \
   --surface "surface:172"
 ```
 
-Agent calls this as its final step (`agent-notify.sh` wraps it with structured payload). Also works as bare positional: `cmux notify "CTB-DONE task=…"` (legacy).
+The worker's final step is to emit `CTB-DONE` in its final output (structured payload optional).
 
 ## Orchestrator Wait Flow
 
-```
-agent-notify.sh (CTB-DONE notify) ─┐
-                                   ├──► cmux event stream
-cmux-session.js (agent.hook.idle) ─┘
-                                          │
-                                          ▼
-  poll-wait.sh --surface <ref> --branch <name> [--task <id>]
-         │
-         ├─ PRIMARY: cmux events --category agent --category notification --no-heartbeat
-         │     grep -E "(lifecycle.*idle|hook_event_name.*Stop|CTB-DONE)"
-         │     → COMPLETE method=event
-         │
-         └─ FALLBACK: poll-push.sh <branch> 60 <total-timeout>
-               git ls-remote polling every 60 s
-               → COMPLETE method=poll | TIMEOUT
-```
+For headless `pi` workers, dispatch with `worker-spawn.sh` and then wait with `worker-watch.sh --pid <PID> --out <WT>/out.json --worktree <WT>`. The watcher follows the worker PID plus the session heartbeat; no screen polling or dashboard typing is needed.
 
-- `poll-wait.sh` is a bash-native dual-source waiter (no GNU `timeout` dependency).
-- If `cmux` is not available, degrades gracefully to poll-only.
-- Standby rule: orchestrator waits on `poll-wait.sh` — never screen-scrapes or types into a working agent pane.
+- `worker-watch.sh` is the canonical standby path for the default flow.
+- If the worker is stuck, stop it with `kill <PID>`.
 
 ## See Also
 
-- [Agent Notifications](agent-notifications.md) — per-backend completion paths & reliability matrix
 - [Orchestrator Rules](ORCHESTRATOR.md) — delegation cycle & standby-after-dispatch rule
-- [Codex Port](codex-port.md) — Codex adapter, backend routing & completion loop
-- [Event-Driven Design](research/cmux-notify-feed-orchestrator.md) — full design doc for `poll-wait.sh`
+- [cmux-agent-workflows](skills/cmux-agent-workflows/SKILL.md) — headless worker launch + watch helpers
+- [Codex Port](codex-port.md) — backend routing & completion loop

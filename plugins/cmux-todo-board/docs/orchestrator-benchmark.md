@@ -32,9 +32,9 @@ This procedure measures orchestration overhead in a controlled, reproducible cyc
 
 5. **Bounded task spec.** Verify the `.task-spec.md` is already in the agent's worktree. If it needs generation, produce a spec that fits in ≤60 lines (using the compact format from `ORCHESTRATOR.md`).
 
-6. **Dispatch one worker.** Run `agent-spawn.sh` + `agent-send.sh` to dispatch exactly one agent. Note the dispatch time.
+6. **Dispatch one worker.** Run `worker-spawn.sh <worktree> --profile <name>` to dispatch exactly one headless worker. Note the dispatch time.
 
-7. **Wait WITHOUT screen polling.** Run `poll-wait.sh --surface <ref> --branch <name>` in the background. Do NOT call `agent-screen.sh`, `cmux read-screen`, or any other polling command while the agent is working. The orchestrator waits on the event stream only.
+7. **Wait WITHOUT screen polling.** Run `worker-watch.sh --pid <PID> --out <WT>/out.json --worktree <WT>` in the background. Do NOT call any screen-polling command while the worker is working. The orchestrator waits on the worker PID and heartbeat only.
 
 8. **Verify changed files / tests.** After the agent completes, run the verification commands specified in the task spec (tests, typecheck, lint). Do NOT trust the agent's self-report — run the hard gate yourself.
 
@@ -60,7 +60,7 @@ This procedure measures orchestration overhead in a controlled, reproducible cyc
 | Lines read directly by orchestrator | Sum of `offset`+`limit` from `read` tool calls in the dispatch round | Post-session (parse debug log) | lines |
 | Largest single tool output | Max byte count of any single `read` or `bash` result in the dispatch round | Post-session (parse debug log) | bytes |
 | Duplicate reads / commands | Count of repeated read calls on the same file or repeated bash commands with identical output | Post-session (parse debug log) | count |
-| Time to dispatch | Wall-clock time from start of `agent-spawn.sh` to completion of `agent-send.sh` | During step 6 | seconds |
+| Time to dispatch | Wall-clock time from start of `worker-spawn.sh` to PID emission | During step 6 | seconds |
 | Total orchestrator tokens | Sum of all prompt tokens across the dispatch round (from `--debug-file` or `/usage` delta) | Post-session | tokens |
 
 ### Log parsing hint

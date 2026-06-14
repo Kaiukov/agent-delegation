@@ -13,7 +13,7 @@ Do not duplicate the worker runtime or board logic.
 | OpenCode plugin | — | — | `.opencode/plugins/cmux-board.mjs` | First-class OpenCode plugin exposing `board_status`/`board_next`/`board_sync` custom tools + `shell.env`/`session.idle` hooks. |
 | Skills | `skills/*/SKILL.md` | `skills/*/SKILL.md` | `skills/*/SKILL.md` | Shared verbatim. |
 | Hooks | `hooks/hooks.json` | `hooks/hooks.json` | `hooks/hooks.json` | Shared verbatim (Claude/Codex); OpenCode uses native plugin hooks. |
-| Worker scripts | `skills/cmux-agent-workflows/scripts/*` | `skills/cmux-agent-workflows/scripts/*` | `skills/cmux-agent-workflows/scripts/*` | Shared backend-agnostic dispatch, wait, notify, and cleanup helpers. |
+| Worker scripts | `skills/cmux-agent-workflows/scripts/*` | `skills/cmux-agent-workflows/scripts/*` | `skills/cmux-agent-workflows/scripts/*` | Shared headless dispatch and standby helpers. |
 | Board cache | `.tasks/*` | `.tasks/*` | `.tasks/*` | Shared cache and state model. |
 | Board logic | `bin/board-*` | `bin/board-*` | `bin/board-*` | Shared commands and label/state flow. |
 
@@ -61,39 +61,26 @@ Worker backend selection is config-driven. New scripts must not hardcode model
 IDs.
 
 - `bin/board-config --get-profile <name>` resolves a profile to a model id.
-- `skills/cmux-agent-workflows/scripts/agent-spawn.sh <split> <wt> --profile <name> [label] [extra]`
-  routes the pane to the pi backend.
-- Concrete Pi example:
-
-  ```bash
-  agent-spawn.sh right <wt> --profile backend <label>
-  ```
-
-- `agent-send.sh` and `agent-kill.sh` accept the same backend via
-  `--kind pi` / `--agent pi`.
+- `worker-spawn.sh <worktree> --profile <name> [label]` launches the headless
+  pi backend for that profile and echoes the PID.
+- Raw model launches use `worker-spawn.sh <worktree> <provider/model> [label]`.
 
 ## Completion Loop
 
-Workers end with the shared completion path:
+Workers end with the shared completion contract:
 
-- `skills/cmux-agent-workflows/scripts/agent-notify.sh` emits the CTB-DONE
-  payload as the final step.
-- `skills/cmux-agent-workflows/scripts/poll-push.sh` remains the fallback if the
-  notification path is missed.
-- `skills/cmux-agent-workflows/scripts/poll-wait.sh` is the bounded consumer:
-  it listens to `cmux events --category agent --category notification` and
-  wakes on either the agent idle lifecycle or the CTB-DONE notification body.
-- The completion wakeup uses the cmux notification stream and does not depend
-  on plugin files being present.
+- worker process exit code is 0,
+- `CTB-DONE` appears in the worker output,
+- the worker's branch commit exists.
 
-There is no backend-specific finish path. The same `agent-notify.sh` and
-`poll-push.sh` logic is reused.
+Use `worker-watch.sh --pid <PID> --out <WT>/out.json --worktree <WT>` as the
+bounded standby check for headless workers.
 
-**Orchestrator standby:** After dispatching, the orchestrator waits in the
-background on `poll-wait.sh` and does not read or type into the agent pane.
-The waiter listens to `cmux events --category agent --category notification`
-and resolves on either `CTB-DONE` or agent idle; see the [canonical standby
-rule in `docs/ORCHESTRATOR.md`](ORCHESTRATOR.md#standby-after-dispatch).
+## Orchestrator Standby
+
+After dispatching, the orchestrator waits on the headless worker via
+`worker-watch.sh` and does not type into a live pane.
+The canonical standby rule lives in `docs/ORCHESTRATOR.md`.
 
 ## Worker Prompt Template
 
@@ -118,14 +105,14 @@ Keep the report to 20 lines or fewer.
 ## GPT-As-Orchestrator Note
 
 If GPT is acting as the orchestrator, keep the same board workflow and
-cmux runtime. The worker backend is always `--agent pi`.
+cmux runtime. The worker backend is always `pi`.
 
 ## Manual Smoke Test
 
 1. Run `/board-pull --repo owner/repo`.
 2. Mark one issue `ready` in GitHub if none are ready yet.
 3. Run `/board-plan`.
-4. Run `/board-run-ready` and confirm a pi worker pane launches.
-5. Wait for the worker's final report and `CTB-DONE` notify.
+4. Run `/board-run-ready` and confirm a headless worker launches.
+5. Wait for the worker's final report and `CTB-DONE` output.
 6. Run the hard gate yourself: full tests plus `claude plugin validate .`.
 7. Merge only after the hard gate passes.

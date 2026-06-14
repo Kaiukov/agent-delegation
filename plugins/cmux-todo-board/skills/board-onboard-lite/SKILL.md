@@ -44,7 +44,7 @@ Canonical status order:
 4. Standby — wait for process exit code + `CTB-DONE` + branch commit (no active polling)
 5. `verify.sh` → hard gate
 6. `pr-finish.sh` → merge
-7. Optional dashboard only: `agent-audit.sh` / `agent-screen.sh` / `agent-notify.sh` / `poll-wait.sh` / `poll-push.sh` for watch/intervene on the parked 3×3 dashboard
+7. Standby uses `worker-watch.sh` on the headless worker PID; no dashboard helpers are needed for the default path
 
 ## On invocation
 

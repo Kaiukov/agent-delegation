@@ -96,8 +96,8 @@ Never trust an agent's self-report. Run the project's tests **and**
 ## Completion notification flow
 
 - **PRIMARY:** completion is the worker process exit code plus the `CTB-DONE` sentinel in output and the worker's branch commit.
-- **OPTIONAL dashboard only:** `agent-screen.sh`, `agent-audit.sh`, `agent-notify.sh`, `poll-wait.sh`, and `poll-push.sh` are for the parked live-dashboard flow, not the default headless path.
-- A missed dashboard signal never strands a task; the parked dashboard helpers are purely for watch/intervene.
+- **HEADLESS standby:** `worker-watch.sh --pid <PID> --out <WT>/out.json --worktree <WT>` is the canonical waiter for the default path.
+- No dashboard helpers are needed for the default path.
 
 ## Standby after dispatch
 

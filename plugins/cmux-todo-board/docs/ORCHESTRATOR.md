@@ -57,18 +57,12 @@ Never start `blocked`/`needs-info` without explicit user action.
 For each task you execute:
 
 1. **Worktree** off `origin/main` (sibling dir, carries `.env`).
-2. **Launch** the worker as a headless background `pi -p` process in the worktree:
-   ```bash
-   cd <worktree> && pi -p --mode json -a \
-     --provider <p> --model <m> --tools <...> \
-     --append-system-prompt prompts/pi/roles/<role>.md @<worktree>/.task-spec.md > out.json 2>&1 &
-   ```
+2. **Launch** the worker with `worker-spawn.sh <worktree> --profile <name>` (or `worker-spawn.sh <worktree> <provider/model>`); it backgrounds `pi -p --mode json -a` in the worktree and echoes the PID.
 3. **Dispatch** task spec — MUST live inside the worker worktree (`<worktree>/.task-spec.md`), never `/tmp`/external dirs, to avoid permission prompts. Use compact format (below).
-4. **Standby after dispatch.** Wait for the worker process exit-code callback, the `CTB-DONE` sentinel in output, and the worker's branch commit. Do not actively poll, screen-scrape, or type into any dashboard surface.
+4. **Standby after dispatch.** Wait for the worker process exit-code callback, the `CTB-DONE` sentinel in output, and the worker's branch commit. Headless kill is `kill <PID>`.
 5. **Verify independently** — hard gate: run tests + validation. Do not trust the worker's word.
 6. **Live-check** real resources (deploy / `--remote` / migration) yourself.
-7. **Merge** (squash) + clean up worktree, branch, and any optional dashboard surfaces. `pr-finish.sh` prompts `Merge PR #N? (y/N)` and only proceeds on explicit `y`/`yes`; the non-interactive default is safe (no merge). The orchestrator must not bypass or automate this prompt — the user must type the confirmation.
-8. **Optional dashboard cleanup** — if you are using the parked live dashboard, run `agent-audit.sh` (dry-run first, then `--apply`) to reclaim idle/finished surfaces. This is watch/intervene only, not the default path, and only after `pr-finish.sh` and at round end.
+7. **Merge** (squash) + clean up worktree and branch. `pr-finish.sh` prompts `Merge PR #N? (y/N)` and only proceeds on explicit `y`/`yes`; the non-interactive default is safe (no merge). The orchestrator must not bypass or automate this prompt — the user must type the confirmation.
 
 ### Task spec format (`.task-spec.md`)
 
@@ -97,12 +91,11 @@ GitHub: <url>
 ### cmux-agent-workflows scripts
 
 `skills/cmux-agent-workflows/scripts/`:
-- **Primary worker launch:** headless `pi -p --mode json -a ...` in the worktree (per-run trust; not a pane script)
 - `wt-new.sh` — worktree off `origin/main`
+- `worker-spawn.sh <worktree> [--profile <name>] [label]` — starts a headless `pi -p --mode json -a` worker and echoes its PID
+- `worker-watch.sh --pid <PID> --out <WT>/out.json --worktree <WT>` — canonical waiter / liveness watchdog for headless `pi` workers
 - `verify.sh` / `verify-ts.sh` — hard gate
 - `pr-finish.sh` — merge + cleanup
-- `worker-watch.sh` — canonical waiter / liveness watchdog for headless `pi` workers (PID + session-jsonl heartbeat; hard timeout + stall kill)
-- `agent-spawn.sh`, `agent-send.sh`, `agent-screen.sh`, `agent-kill.sh`, `agent-audit.sh`, `agent-notify.sh`, `coms-net-await.sh`, `poll-wait.sh`, `poll-push.sh` — legacy/optional-dashboard only (superseded by `worker-watch.sh`; parked live-dashboard / intervene helpers; not default path)
 
 ## Standby after dispatch {#standby-after-dispatch}
 
@@ -114,8 +107,8 @@ After dispatching a headless background worker, the orchestrator MUST enter stan
   - `CRASHED`: PID exits without `EXIT=0` or `CTB-DONE`; prints the last 8 lines of the out file, exits 1.
   - `DONE`: PID exits with `EXIT=0` or `CTB-DONE`; prints `STATUS=DONE`, exits 0.
   - Hard timeout: elapsed ≥ max; watchdog `kill`s the PID, prints `STATUS=KILLED_TIMEOUT`, exits 124.
-- **No active polling in the default path.** `worker-watch.sh` is the canonical waiter for headless `pi` workers; `agent-screen.sh`, `poll-wait.sh`, `poll-push.sh`, and `coms-net-await.sh` are legacy dashboard helpers only.
-- **Do not type into the parked dashboard.** If you are using cmux for watch/intervene, only inspect or intervene after completion signal or explicit user instruction.
+- **No active polling in the default path.** `worker-watch.sh` is the canonical waiter for headless `pi` workers.
+- **Headless kill is `kill <PID>`.**
 
 ## On invocation
 

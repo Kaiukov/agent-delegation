@@ -4,8 +4,8 @@
 - Keep the fix additive and bounded to the task scope.
 - If you discover unrelated work, do not expand the task; report it in
   `BLOCKERS` or `NEXT_ACTION`.
-- The final step is `agent-notify.sh`; then return the short final report
-  below.
+- The final step is to finish the worker, emit `CTB-DONE`, then return the
+  short final report below.
 
 ## Final Report
 

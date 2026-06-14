@@ -48,30 +48,27 @@ The orchestrator reads `.tasks/board.json` at each round's "On invocation" step 
 
 **Finding:** Reading full `board.json` when only status counts + next-ready are needed burns ~50x more tokens than necessary. The `board-status` helper already produces a compact ~150-byte summary. The only step that genuinely needs the full board is `board-plan` (to extract ready task titles + URLs for mirroring). The orchestrator's initial summary step (step 3: "summarize counts per status") does not need the full file.
 
-### 1.3 Agent screen polling (per spawn)
+### 1.3 Headless worker launch (per dispatch)
 
-`agent-spawn.sh` calls `wait_agent_ready()` from `lib.sh`, which polls `cmux read-screen --surface <s> --lines 40` every 3 seconds until the agent TUI shows a readiness banner (up to 120s timeout).
+`worker-spawn.sh` launches the worker in the background and echoes the PID. The launch contract stays out of orchestrator context; the only visible output should be the PID and the worker's final status.
 
 | Variable | Value | Notes |
 |----------|-------|-------|
-| Lines per screen read | 40 | Hardcoded in `wait_agent_ready` (`lib.sh:150`) |
-| Poll interval | 3s | Hardcoded (`lib.sh:164`) |
-| Max reads per spawn | ~40 | 120s / 3s |
-| Output per read (est.) | 2,000–5,000 chars | ANSI escape sequences, TUI borders, prompt text |
-| **Total per spawn** | **80–200 KB** of screen output | ASSUMED (depends on terminal width, model banner) |
+| Launch mode | background PID | The helper prints the PID for standby |
+| Completion signal | `CTB-DONE` + exit code | The worker itself carries the contract |
+| Output size | bounded `out.json` | The watcher reads the file, not the live screen |
 
-**Finding:** Each `cmux read-screen` call produces terminal output that enters the orchestrator's context when run via Bash tool. At 3s intervals over a 120s window, up to 40 reads occur — even if the agent is ready in 15s, that's still 5 reads × 40 lines = ~10-25 KB of noise. This is the largest single source of recurring token waste in the dispatch loop. The readiness check could be done entirely inside the background script (not surfaced to orchestrator context) or via event-driven signaling instead of screen polling.
+**Finding:** Moving launch and readiness into the worker helper eliminates the repeated screen reads that used to flood the orchestrator context. The standalone watcher keeps standby output bounded and avoids surfacing the internal boot chatter.
 
-### 1.4 `poll-wait.sh` background chatter
+### 1.4 `worker-watch.sh` standby chatter
 
-When run via `Bash run_in_background:true`, the script produces log lines and final output that are surfaced to the orchestrator as background notifications.
+When run in the background, the watcher produces periodic heartbeat lines and a final status line.
 
 | Output source | Est. chars | Notes |
 |--------------|-----------|-------|
-| `log()` stderr lines | ~100–200 | "baseline for <branch>", "agent kind", etc. (lib.sh `log()`) |
-| `cmux events | grep` startup | ~50 | Binary output may still trigger relay |
-| Final COMPLETE/TIMEOUT line | ~80 | One line on completion |
-| `poll-push.sh` fallback `log()` | ~100 | If event path disabled or falls through |
+| `log()` stderr lines | ~100–200 | Launch summary, PID, worker details |
+| Heartbeat line | ~50 | One line per interval |
+| Final STATUS line | ~80 | One line on completion |
 | **Total background noise** | **200–500 chars** per dispatch | MEASURED (script source analysis of log calls) |
 
 **Finding:** Low individual cost, but accumulates across N parallel dispatches. The `log()` helper in `lib.sh` unconditionally emits to stderr via `echo ">> $*" >&2`. In a background Bash invocation, stderr is captured and surfaced. A `--quiet` flag or `log()` that no-ops unless `DEBUG=1` would eliminate this entirely.
@@ -137,21 +134,21 @@ When run via `Bash run_in_background:true`, the script produces log lines and fi
 
 **Precedent:** #42 change 5 already capped board-plan mirroring at 5. This extends the "don't load everything" pattern to the initial summary step.
 
-### Proposal 3: Move agent readiness polling out of orchestrator context
+### Proposal 3: Move readiness checks out of orchestrator context
 
-**What:** `agent-spawn.sh` currently runs `wait_agent_ready()` synchronously inside the spawn command, which means all `cmux read-screen` output enters orchestrator context. Instead: make `agent-spawn.sh` fire-and-forget the readiness check, return the surface ref immediately, and have the orchestrator use `poll-wait.sh` (which already uses event-driven waiting) to confirm readiness. The screen polling stays inside the script's process group and is never surfaced.
+**What:** `worker-spawn.sh` keeps launch and prompt-layering inside the worker helper, and `worker-watch.sh` handles standby on the PID + heartbeat. The orchestrator should only see the PID, final status, and branch commit.
 
-**Est. saving:** 10,000–200,000 bytes per dispatch (ASSUMED — based on 5–40 screen reads × 2–5 KB each, depending on how quickly the agent boots)
+**Est. saving:** 10,000–200,000 bytes per dispatch (ASSUMED — based on the old 5–40 screen reads × 2–5 KB each)
 
-**Risk:** MEDIUM. Changes the orchestrator's dispatch flow: currently the orchestrator spawns an agent and blocks until it sees the surface ref indicating readiness. With this change, the orchestrator spawns, gets a surface ref immediately, then sends the task spec and polls for completion. If the agent isn't ready when `agent-send.sh` fires, the typed text may land in the agent's startup sequence (before the prompt is active). Mitigation: `agent-send.sh` could poll readiness itself (inside the script, not surfaced to orchestrator) before sending.
+**Risk:** MEDIUM. Changes the orchestrator's dispatch flow: the orchestrator launches the worker, gets a PID immediately, and then waits on the watcher for completion. If the worker isn't ready when verification starts, the task can still be retried or inspected via the bounded out file.
 
-**Touches correctness:** Yes. Requires changes to `agent-spawn.sh` to detach readiness polling, and to `agent-send.sh` to wait-for-ready before typing. The behavioral change is in the scripts, not in the orchestrator's decision-making.
+**Touches correctness:** Yes. Requires the launch helper to own the readiness contract and the watcher to own standby. The behavioral change is in the scripts, not in the orchestrator's decision-making.
 
-**Precedent:** `poll-wait.sh` already moved waiting from polling to event-driven. This extends the same principle to the spawn phase.
+**Precedent:** `worker-watch.sh` already centralizes waiting and heartbeat checks.
 
 ### Proposal 4: `--quiet` flag for background scripts
 
-**What:** Add a `--quiet` flag (or `LOG_LEVEL` env var) to `lib.sh`'s `log()` function so background scripts (`poll-wait.sh`, `poll-push.sh`, `agent-spawn.sh`) suppress stderr chatter when run via `Bash run_in_background:true`. Default behavior unchanged; the orchestrator explicitly passes `--quiet`.
+**What:** Add a `--quiet` flag (or `LOG_LEVEL` env var) to `lib.sh`'s `log()` function so background scripts (`worker-spawn.sh`, `worker-watch.sh`) suppress stderr chatter when run via `Bash run_in_background:true`. Default behavior unchanged; the orchestrator explicitly passes `--quiet`.
 
 **Est. saving:** 200–500 bytes per dispatch × N concurrent agents (ASSUMED — based on log call count in scripts)
 
@@ -215,7 +212,7 @@ For each proposal implemented, measure:
 | board.json size (simulated) | Python JSON dump | This document §1.2 | Test with 5/15/50 issue fixtures |
 | board-status output size | `board-status | wc -c` | ~150 bytes | Already compact |
 | agent screen read size | `cmux read-screen --lines 40 | wc -c` | 2-5 KB | Need live measurement |
-| poll-wait background output | `wc -c` of captured stderr | This document §1.4 | Re-run with --quiet flag |
+| worker-watch background output | `wc -c` of captured stderr | This document §1.4 | Re-run with --quiet flag |
 | Round-trip total | Sum of all loaded artifacts | This document summary | Recompute per proposal |
 
 ### 3.3 Test fixtures
@@ -249,9 +246,9 @@ Currently the orchestrator reads `board.json` directly. `board-status --json` re
 
 **Recommendation:** Yes. Add `--ready-tasks N` to `board-status --json` that returns counts + up to N ready task objects (title, number, url, labels). This replaces both the summary step AND the board-plan input with a single compact call (~1-2 KB instead of 7-25 KB).
 
-### Q3: Is the agent readiness screen polling actually a problem in practice?
+### Q3: Is readiness still a problem in practice?
 
-The 10-200 KB estimate assumes every `cmux read-screen` call surfaces output to the orchestrator context. If the Bash tool only relays the final exit code/output of `agent-spawn.sh` (which echoes the surface ref at the end), the screen reads within `wait_agent_ready` may not pollute context. This needs empirical verification: run `agent-spawn.sh` via the orchestrator's Bash tool and measure how much output enters context.
+The old 10-200 KB estimate assumed every `cmux read-screen` call surfaced output to the orchestrator context. If the Bash tool only relays the final exit code/output of `worker-spawn.sh`, the launch chatter may not pollute context. This still needs empirical verification: run `worker-spawn.sh` via the orchestrator's Bash tool and measure how much output enters context.
 
 **Recommendation:** Measure before implementing. If the Bash tool only captures the final stdout (surface ref), Proposal 3 is moot. If it captures all `cmux read-screen` output from the subshell, it's the highest-priority fix.
 

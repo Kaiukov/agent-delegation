@@ -83,7 +83,7 @@ Every conversation turn accumulates in the context window, consuming tokens from
 
 ### 2.7 Subagent / worker contribution
 
-Each agent dispatch produces a response that enters the orchestrator's context when read back (via final screen read, background notification, or poll-wait result).
+Each agent dispatch produces a response that enters the orchestrator's context when read back from the headless worker exit/status output.
 
 **Symptom:** After dispatching an agent, the orchestrator reads a multi-KB agent report that adds to the turn's token count.
 **Check:** Compare `/usage` before and after the agent's final report is read.

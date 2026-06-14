@@ -44,7 +44,7 @@ owns:
 ```
 
 - **Shared file:** `<path to shared file>`
-- **Contention mark:** `<id>` (e.g. `#91` damage-control)
+- **Contention mark:** `<id>` (e.g. `#91` legacy-scripts)
 - **This worker's block:** everything between `# --- <id> <topic> ---` and
   `# --- end <id> ---`. Do NOT edit code outside this delimiting block, even if
   the file appears in the Files list. Any change outside the block signals a
