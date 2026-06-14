@@ -5,18 +5,24 @@ This project adheres to semantic versioning.
 
 ## [Unreleased]
 
-### Removed
-- Cut non-core commands (#151): `board-install`, `board-sync` (pull stays one-directional; status write-back is manual via `gh`), `board-model` registry CRUD (profiles + `board-config --get-profile` cover spawn selection), and `limit-monitor`. ~2.8k lines of code/tests/docs removed.
-- Cut pane/notification machinery (#151): `damage-control` + `coms-net` extensions, `coms-net-server.ts`, and the pane scripts `agent-spawn`/`agent-screen`/`agent-audit`/`agent-notify`/`agent-send`/`agent-kill`, `poll-wait`/`poll-push`, `coms-net-await` — plus their 8 tests. The cmux 3×3 dashboard, `cmux-dev-grid`, `agent-spawn.sh`, and `spawn-3x3`/`agent-rotate` are parked under `parked/cmux-dashboard/` (kept for reference, not maintained).
+## [0.9.0] - 2026-06-14
 
 ### Added
+- V1 tmux/GitHub-first orchestrator (#153): `bin/orch-config`, `orch-dispatch`, `orch-spawn`, `orch-tmux-spawn`, `orch-watch`, `orch-status`, `orch-verify`, `orch-finish`, and `orch-statusline` (CODEX status line). Six `orchestrator-*` skills (onboard/dispatch/standby/status/verify/finish) and `docs/orchestrator-v1.md` + `docs/orchestrator-contracts.md`.
+- Orchestration profile registry `orch-config` resolving `repo-scout`/`backend`/`reviewer` to `openai-codex/gpt-5.4-mini` (thinking low/high/med) after free models rate-limited (#155).
 - `worker-watch.sh`: liveness watchdog + waiter for headless `pi` workers — PID + session-jsonl heartbeat, hard timeout, and stall/hung detection; supersedes poll-wait/coms-net waiters (#151).
 - `worker-spawn.sh`: thin headless launcher — resolves a `--profile` (or raw `provider/model`), layers `common-system` + role + `worker-contract` prompts onto `.task-spec.md`, spawns `pi -p` in the background, and prints the worker PID (#151).
 - `worker-contract.md`: binding worker-discipline prompt (restate → scope → forbidden gh/push/PR → prove-before-done → output) layered onto every worker (#152).
 
 ### Changed
-- Orchestrator now dispatches workers as headless `pi -p` background processes (exit-code callback + CTB-DONE sentinel + branch commit) instead of cmux panes; cmux 3×3 cockpit demoted to an optional parked dashboard (#151).
+- `orch-spawn` resolves worker model/thinking/tools via `orch-config` (separate from `board-config`) and launches via the `--model` path; naming is deterministic and locked by `test_orch_naming.sh` (#154).
+- Orchestrator now dispatches workers as headless `pi -p` background processes (exit-code callback + branch commit) instead of cmux panes; cmux 3×3 cockpit demoted to an archived dashboard (#151).
 - `board-onboard` / `board-onboard-lite` delegation cycle now names the concrete headless scripts (`wt-new.sh → worker-spawn.sh → worker-watch.sh → verify.sh → pr-finish.sh`) so the orchestrator knows exactly how to launch and standby on workers (#151).
+
+### Removed
+- Cut non-core commands (#151): `board-install`, `board-sync` (pull stays one-directional; status write-back is manual via `gh`), `board-model` registry CRUD (profiles + `board-config --get-profile` cover spawn selection), and `limit-monitor`. ~2.8k lines of code/tests/docs removed.
+- Cut pane/notification machinery (#151): `damage-control` + `coms-net` extensions, `coms-net-server.ts`, and the pane scripts `agent-spawn`/`agent-screen`/`agent-audit`/`agent-notify`/`agent-send`/`agent-kill`, `poll-wait`/`poll-push`, `coms-net-await` — plus their 8 tests.
+- Moved legacy cmux machinery out of the active product into `legacy-reference/`: `cmux-dashboard/` (3×3 grid, `spawn-3x3`, `agent-rotate`, `cmux-dev-grid`), `cmux-agent-workflows-lite/`, and `verify-ts.sh`; rewired the active skills/docs that referenced them (#151). Archived under `legacy-reference/` — kept for reference, not maintained.
 
 ## [0.8.0] - 2026-06-13
 
