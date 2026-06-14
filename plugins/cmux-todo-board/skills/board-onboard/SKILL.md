@@ -70,7 +70,21 @@ is future work.
 
 ## 4. Delegation cycle
 
-The canonical cycle is **worktree → headless `pi -p` background spawn → dispatch → standby on exit code + `CTB-DONE` + branch commit → verify → merge → cleanup**. The parked cmux 3×3 dashboard is optional for watch/intervene only.
+The canonical cycle is **worktree → headless `pi -p` background spawn → standby → verify → merge → cleanup**. Scripts live in `skills/cmux-agent-workflows/scripts/`:
+
+1. `wt-new.sh <branch> <dir>` — branch a worktree off `origin/main`.
+2. Write `<worktree>/.task-spec.md` (Goal + Acceptance + Commit + `CTB-DONE`).
+3. `worker-spawn.sh <worktree> --profile <name>` — launch the headless `pi -p`
+   background worker; it **prints the worker PID** on stdout (log goes to stderr).
+   The launcher layers `common-system.md` + `roles/<role>.md` + `worker-contract.md`
+   onto the spec. Raw model form: `worker-spawn.sh <worktree> <provider/model> [label]`.
+4. `worker-watch.sh --pid <PID> --out <worktree>/out.json --worktree <worktree>` —
+   standby; it watches the PID plus the pi session-jsonl heartbeat and prints
+   `STATUS=DONE` (exit 0), `CRASHED` (1), `KILLED_STALLED` (125), or
+   `KILLED_TIMEOUT` (124). Kill a stuck worker with `kill <PID>`.
+5. `verify.sh` → hard gate. 6. `pr-finish.sh` → merge (only with the user's permission).
+
+The parked cmux 3×3 dashboard (`parked/cmux-dashboard/`) is optional, for watch/intervene only.
 See `board-onboard-lite` for the compact reference or `cmux-agent-workflows-lite` for the
 script-based workflow. Full script documentation lives in `cmux-agent-workflows` (on-demand).
 

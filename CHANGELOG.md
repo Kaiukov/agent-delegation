@@ -7,12 +7,16 @@ This project adheres to semantic versioning.
 
 ### Removed
 - Cut non-core commands (#151): `board-install`, `board-sync` (pull stays one-directional; status write-back is manual via `gh`), `board-model` registry CRUD (profiles + `board-config --get-profile` cover spawn selection), and `limit-monitor`. ~2.8k lines of code/tests/docs removed.
+- Cut pane/notification machinery (#151): `damage-control` + `coms-net` extensions, `coms-net-server.ts`, and the pane scripts `agent-spawn`/`agent-screen`/`agent-audit`/`agent-notify`/`agent-send`/`agent-kill`, `poll-wait`/`poll-push`, `coms-net-await` — plus their 8 tests. The cmux 3×3 dashboard, `cmux-dev-grid`, `agent-spawn.sh`, and `spawn-3x3`/`agent-rotate` are parked under `parked/cmux-dashboard/` (kept for reference, not maintained).
 
 ### Added
 - `worker-watch.sh`: liveness watchdog + waiter for headless `pi` workers — PID + session-jsonl heartbeat, hard timeout, and stall/hung detection; supersedes poll-wait/coms-net waiters (#151).
+- `worker-spawn.sh`: thin headless launcher — resolves a `--profile` (or raw `provider/model`), layers `common-system` + role + `worker-contract` prompts onto `.task-spec.md`, spawns `pi -p` in the background, and prints the worker PID (#151).
+- `worker-contract.md`: binding worker-discipline prompt (restate → scope → forbidden gh/push/PR → prove-before-done → output) layered onto every worker (#152).
 
 ### Changed
 - Orchestrator now dispatches workers as headless `pi -p` background processes (exit-code callback + CTB-DONE sentinel + branch commit) instead of cmux panes; cmux 3×3 cockpit demoted to an optional parked dashboard (#151).
+- `board-onboard` / `board-onboard-lite` delegation cycle now names the concrete headless scripts (`wt-new.sh → worker-spawn.sh → worker-watch.sh → verify.sh → pr-finish.sh`) so the orchestrator knows exactly how to launch and standby on workers (#151).
 
 ## [0.8.0] - 2026-06-13
 

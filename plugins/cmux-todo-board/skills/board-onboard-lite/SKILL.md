@@ -38,13 +38,19 @@ Canonical status order:
 
 ## Delegation cycle (compact)
 
-1. `wt-new.sh` → worktree
-2. Launch the canonical headless `pi -p` worker in the worktree (see `docs/ORCHESTRATOR.md` for the full command)
-3. Dispatch `.task-spec.md` inside the worktree
-4. Standby — wait for process exit code + `CTB-DONE` + branch commit (no active polling)
-5. `verify.sh` → hard gate
-6. `pr-finish.sh` → merge
-7. Standby uses `worker-watch.sh` on the headless worker PID; no dashboard helpers are needed for the default path
+Scripts live in `skills/cmux-agent-workflows/scripts/`.
+
+1. `wt-new.sh <branch> <dir>` → create worktree (off `origin/main`)
+2. Write the task as `<worktree>/.task-spec.md` (never `/tmp` — external-dir prompts)
+3. `worker-spawn.sh <worktree> --profile <name>` → launches a headless `pi -p`
+   background worker, **prints its PID** (the handle). Raw model:
+   `worker-spawn.sh <worktree> <provider/model> [label]`.
+4. `worker-watch.sh --pid <PID> --out <worktree>/out.json --worktree <worktree>`
+   → standby; watches PID + session heartbeat, prints `STATUS=DONE|CRASHED|KILLED_STALLED|KILLED_TIMEOUT`. No active polling, no panes.
+5. `verify.sh` → hard gate (run yourself; never merge on self-report)
+6. `pr-finish.sh` → merge (only with the user's explicit per-PR permission)
+
+Kill a stuck worker with `kill <PID>`. The parked 3×3 cmux dashboard is optional, for watch/intervene only.
 
 ## On invocation
 
