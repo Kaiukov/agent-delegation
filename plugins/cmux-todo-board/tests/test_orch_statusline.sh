@@ -81,6 +81,58 @@ else
   failures=$((failures + 1))
 fi
 
+echo "=== Test 3: completed runs are reported once after tmux sessions disappear ==="
+mkdir -p "$TESTDIR/quiet-plugin-root/.tasks/orchestrator/runs"
+cat > "$TESTDIR/quiet-plugin-root/.tasks/orchestrator/runs/153-watch-20260614T160000Z.json" <<'EOF'
+{
+  "agent": "orch-153-watch",
+  "model": "openai-codex/gpt-5.4-mini",
+  "task": "watch finished",
+  "status": "done"
+}
+EOF
+cat > "$TESTDIR/bin/tmux" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "list-sessions" ]]; then
+  exit 0
+fi
+echo "unsupported tmux mock call: $*" >&2
+exit 1
+EOF
+chmod +x "$TESTDIR/bin/tmux"
+output="$(
+  cd "$TESTDIR/workspace"
+  export PATH="$TESTDIR/bin:$PATH"
+  export CLAUDE_PLUGIN_ROOT="$TESTDIR/quiet-plugin-root"
+  printf '{"cwd":"%s"}\n' "$PWD" | "$STATUSLINE_BIN"
+)"
+if [[ "$output" == "✅ orch-153-watch · openai-codex/gpt-5.4-mini · watch finished [done]" ]]; then
+  echo "PASS"
+else
+  echo "FAIL: $output"
+  failures=$((failures + 1))
+fi
+reported_at="$(jq -r '.reported_at // empty' "$TESTDIR/quiet-plugin-root/.tasks/orchestrator/runs/153-watch-20260614T160000Z.json")"
+if [[ -n "$reported_at" ]]; then
+  echo "PASS: reported_at acknowledged"
+else
+  echo "FAIL: reported_at missing"
+  failures=$((failures + 1))
+fi
+output="$(
+  cd "$TESTDIR/workspace"
+  export PATH="$TESTDIR/bin:$PATH"
+  export CLAUDE_PLUGIN_ROOT="$TESTDIR/quiet-plugin-root"
+  printf '{"cwd":"%s"}\n' "$PWD" | "$STATUSLINE_BIN"
+)"
+if [[ "$output" == "🟢 orchestrator idle — no agents running" ]]; then
+  echo "PASS: completed run no longer repeats"
+else
+  echo "FAIL: $output"
+  failures=$((failures + 1))
+fi
+
 echo ""
 if [[ $failures -eq 0 ]]; then
   echo "All orch statusline tests passed."
