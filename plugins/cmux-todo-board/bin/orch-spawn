@@ -1,4 +1,68 @@
 #!/usr/bin/env bash
 set -euo pipefail
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$DIR/orch-tmux-spawn" "$@"
+REPO_ROOT="$(cd "$DIR/../../.." && pwd)"
+ORCH_TMUX_SPAWN="${ORCH_TMUX_SPAWN:-$DIR/orch-tmux-spawn}"
+
+usage() {
+  cat >&2 <<'EOF'
+usage: orch-spawn --role <role> --task-id <issue>
+EOF
+}
+
+die() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+role=""
+task_id_raw=""
+
+while (( $# > 0 )); do
+  case "$1" in
+    --role)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      role="$2"
+      shift 2
+      ;;
+    --role=*)
+      role="${1#--role=}"
+      shift
+      ;;
+    --task-id)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      task_id_raw="$2"
+      shift 2
+      ;;
+    --task-id=*)
+      task_id_raw="${1#--task-id=}"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+[[ -n "$role" && -n "$task_id_raw" ]] || { usage; exit 2; }
+[[ -x "$ORCH_TMUX_SPAWN" ]] || die "missing orch-tmux-spawn at $ORCH_TMUX_SPAWN"
+
+issue_digits="$(printf '%s' "$task_id_raw" | grep -oE '[0-9]+' | head -1 || true)"
+[[ -n "$issue_digits" ]] || die "task-id must contain an issue number: $task_id_raw"
+issue_num="$((10#$issue_digits))"
+branch="issue-${issue_num}-${role}"
+worktree="$(dirname "$REPO_ROOT")/wt-${branch}"
+session="orch-${issue_num}-${role}"
+
+exec "$ORCH_TMUX_SPAWN" \
+  --issue "$issue_num" \
+  --worktree "$worktree" \
+  --profile "$role" \
+  --role "$role" \
+  --session "$session"
