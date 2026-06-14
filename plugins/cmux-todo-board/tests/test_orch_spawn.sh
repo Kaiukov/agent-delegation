@@ -28,6 +28,7 @@ chmod +x "$TMPDIR/bin/orch-tmux-spawn"
 
 export ORCH_TMUX_SPAWN="$TMPDIR/bin/orch-tmux-spawn"
 export ORCH_TMUX_SPAWN_LOG="$STUB_LOG"
+export ORCH_CONFIG="$REPO_ROOT/plugins/cmux-todo-board/bin/orch-config"
 
 ISSUE="4711"
 ROLE="backend"
@@ -47,7 +48,9 @@ printf '%s\n' "$output" > "$STUB_OUT"
 expected_args=(
   --issue "$ISSUE"
   --worktree "$WORKTREE"
-  --profile "$ROLE"
+  --model "openai-codex/gpt-5.4-mini"
+  --thinking "high"
+  --tools "read,bash,edit,write,grep,find,ls"
   --role "$ROLE"
   --session "$SESSION"
 )

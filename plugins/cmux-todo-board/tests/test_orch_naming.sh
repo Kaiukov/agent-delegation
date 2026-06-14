@@ -37,13 +37,24 @@ run_case() {
   while IFS= read -r line; do
     args+=("$line")
   done < "$log"
-  if [[ ${#args[@]} -ne 10 ]]; then
-    echo "FAIL: $label argv=${args[*]-}"
-    failures=$((failures + 1))
-    return
-  fi
 
-  if [[ "${args[0]}" == "--issue" && "${args[1]}" == "$issue" && "${args[2]}" == "--worktree" && "$(basename "${args[3]}")" == "$worktree_base" && "${args[4]}" == "--profile" && "${args[5]}" == "$role" && "${args[6]}" == "--role" && "${args[7]}" == "$role" && "${args[8]}" == "--session" && "${args[9]}" == "$session" ]]; then
+  # Look up the value passed after a given --flag (naming is what we assert here,
+  # independent of profile/model resolution flags).
+  arg_value() {
+    local want="$1" i
+    for ((i = 0; i < ${#args[@]} - 1; i++)); do
+      if [[ "${args[$i]}" == "$want" ]]; then
+        printf '%s' "${args[$((i + 1))]}"
+        return 0
+      fi
+    done
+    return 1
+  }
+
+  if [[ "$(arg_value --issue)" == "$issue" \
+     && "$(basename "$(arg_value --worktree)")" == "$worktree_base" \
+     && "$(arg_value --role)" == "$role" \
+     && "$(arg_value --session)" == "$session" ]]; then
     echo "PASS: $label"
   else
     echo "FAIL: $label argv=${args[*]}"

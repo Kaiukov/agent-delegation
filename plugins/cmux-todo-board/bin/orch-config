@@ -6,7 +6,7 @@ PROFILES=(repo-scout backend reviewer)
 usage() {
   cat <<'EOF'
 Usage: orch-config --list-profiles
-       orch-config --get-profile <name>
+       orch-config --get-profile <name> [--json]
        orch-config --help|-h
 
 Minimal orchestration profile resolver.
@@ -44,28 +44,34 @@ get_profile_json() {
       jq -cn \
         --arg role "repo-scout" \
         --arg runtime "pi" \
-        --arg model "deepseek-v4-flash" \
+        --arg model "openai-codex/gpt-5.4-mini" \
+        --arg thinking "low" \
+        --arg tools "read,bash,grep,find,ls" \
         --arg permissions "read-only" \
         --arg launch_mode "via-pi" \
-        '{role: $role, runtime: $runtime, model: $model, permissions: $permissions, launch_mode: $launch_mode}'
+        '{role: $role, runtime: $runtime, model: $model, thinking: $thinking, tools: $tools, permissions: $permissions, launch_mode: $launch_mode}'
       ;;
     backend)
       jq -cn \
         --arg role "backend" \
         --arg runtime "pi" \
-        --arg model "deepseek-v4-pro" \
+        --arg model "openai-codex/gpt-5.4-mini" \
+        --arg thinking "high" \
+        --arg tools "read,bash,edit,write,grep,find,ls" \
         --arg permissions "write" \
         --arg launch_mode "via-pi" \
-        '{role: $role, runtime: $runtime, model: $model, permissions: $permissions, launch_mode: $launch_mode}'
+        '{role: $role, runtime: $runtime, model: $model, thinking: $thinking, tools: $tools, permissions: $permissions, launch_mode: $launch_mode}'
       ;;
     reviewer)
       jq -cn \
         --arg role "reviewer" \
         --arg runtime "pi" \
-        --arg model "deepseek-v4-pro" \
+        --arg model "openai-codex/gpt-5.4-mini" \
+        --arg thinking "med" \
+        --arg tools "read,bash,grep,find,ls" \
         --arg permissions "read-only" \
         --arg launch_mode "via-pi" \
-        '{role: $role, runtime: $runtime, model: $model, permissions: $permissions, launch_mode: $launch_mode}'
+        '{role: $role, runtime: $runtime, model: $model, thinking: $thinking, tools: $tools, permissions: $permissions, launch_mode: $launch_mode}'
       ;;
   esac
 }
@@ -82,11 +88,14 @@ case "${1:-}" in
     list_profiles
     ;;
   --get-profile)
-    if [[ $# -ne 2 ]]; then
-      echo "orch-config: usage: orch-config --get-profile <name>" >&2
+    if [[ $# -eq 2 ]]; then
+      get_profile_json "$2"
+    elif [[ $# -eq 3 && $3 == --json ]]; then
+      get_profile_json "$2"
+    else
+      echo "orch-config: usage: orch-config --get-profile <name> [--json]" >&2
       exit 1
     fi
-    get_profile_json "$2"
     ;;
   *)
     echo "orch-config: missing or unknown command. Use --help." >&2
