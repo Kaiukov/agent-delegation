@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# orch-status — Print a compact snapshot of all active orchestrator runs.
+# Reads .tasks/orchestrator/<run-id>/{state,pid,started,head} files and summarizes them.
+set -euo pipefail
+
+ORCH_DIR=".tasks/orchestrator"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: orch-status [--json] [--help|-h]
+
+Print compact orchestrator run summary.
+
+Options:
+  --json      Machine-readable JSON output
+  --help, -h  Show this help message
+
+Output (human):  run-id state elapsed pid
+Output (JSON):   {"runs": [...], "counts": {...}}
+EOF
+  exit 0
+}
+
+is_uint() { [[ "${1:-}" =~ ^[0-9]+$ ]]; }
+
+format_elapsed() {
+  local elapsed="$1"
+  if (( elapsed < 60 )); then
+    printf '%ss' "$elapsed"
+  elif (( elapsed < 3600 )); then
+    printf '%sm%ss' "$(( elapsed / 60 ))" "$(( elapsed % 60 ))"
+  else
+    printf '%sh%sm' "$(( elapsed / 3600 ))" "$(( (elapsed % 3600) / 60 ))"
+  fi
+}
+
+# Read a single-line value from a file; returns empty string if missing.
+read_file() {
+  local f="$1"
+  if [[ -f "$f" ]]; then
+    tr -d '\n' < "$f"
+  fi
+}
+
+# Collect run IDs from subdirectories of $ORCH_DIR, sorted alphabetically.
+collect_runs() {
+  local dir="$1"
+  RUN_IDS=()
+  shopt -s nullglob
+  local subs=("$dir"/*/)
+  shopt -u nullglob
+  [[ ${#subs[@]} -eq 0 ]] && return
+  local d name
+  for d in "${subs[@]}"; do
+    name="$(basename "$d")"
+    RUN_IDS+=("$name")
+  done
+  IFS=$'\n' RUN_IDS=($(printf '%s\n' "${RUN_IDS[@]}" | sort)); unset IFS
+}
+
+JSON_MODE=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json) JSON_MODE=1; shift ;;
+    --help|-h) usage ;;
+    *) echo "orch-status: unknown flag: $1" >&2; usage ;;
+  esac
+done
+
+if [[ ! -d "$ORCH_DIR" ]]; then
+  if [[ "$JSON_MODE" -eq 1 ]]; then
+    echo '{"runs":[],"counts":{"total":0,"running":0,"progressed":0,"ready_for_verify":0,"failed":0,"stalled":0}}'
+  else
+    echo "(no active runs)"
+  fi
+  exit 0
+fi
+
+collect_runs "$ORCH_DIR"
+
+if [[ ${#RUN_IDS[@]} -eq 0 ]]; then
+  if [[ "$JSON_MODE" -eq 1 ]]; then
+    echo '{"runs":[],"counts":{"total":0,"running":0,"progressed":0,"ready_for_verify":0,"failed":0,"stalled":0}}'
+  else
+    echo "(no active runs)"
+  fi
+  exit 0
+fi
+
+NOW="$(date +%s)"
+
+run_state() {
+  local f="$ORCH_DIR/$1/state"
+  if [[ -f "$f" ]]; then
+    tr -d '\n' < "$f"
+  else
+    echo "unknown"
+  fi
+}
+
+run_pid()   { read_file "$ORCH_DIR/$1/pid"; }
+run_started() { read_file "$ORCH_DIR/$1/started"; }
+
+count_state() {
+  local target="$1" count=0 rid state
+  for rid in "${RUN_IDS[@]}"; do
+    state="$(run_state "$rid")"
+    [[ "$state" == "$target" ]] && count=$((count + 1))
+  done
+  printf '%s\n' "$count"
+}
+
+# ── JSON output ────────────────────────────────────────────────────────
+if [[ "$JSON_MODE" -eq 1 ]]; then
+  # Emit one JSON object per run, then slurp into array and add counts.
+  for rid in "${RUN_IDS[@]}"; do
+    state="$(run_state "$rid")"
+    pid="$(run_pid "$rid")"
+    started="$(run_started "$rid")"
+    if is_uint "$started"; then
+      elapsed=$(( NOW - started ))
+    else
+      elapsed="null"
+    fi
+    [[ -n "$pid" ]] && pid_val="\"$pid\"" || pid_val="null"
+    printf '{"run_id":"%s","state":"%s","elapsed":%s,"pid":%s}\n' \
+      "$rid" "$state" "$elapsed" "$pid_val"
+  done | jq -cs \
+    --argjson running "$(count_state running)" \
+    --argjson progressed "$(count_state progressed)" \
+    --argjson ready "$(count_state ready-for-verify)" \
+    --argjson failed "$(count_state failed)" \
+    --argjson stalled "$(count_state stalled)" \
+    '{runs: ., counts: {
+      total: (. | length),
+      running: $running,
+      progressed: $progressed,
+      ready_for_verify: $ready,
+      failed: $failed,
+      stalled: $stalled
+    }}'
+  exit 0
+fi
+
+# ── Human-readable output ─────────────────────────────────────────────
+printf '%-24s %-18s %8s  %s\n' "RUN_ID" "STATE" "ELAPSED" "PID"
+printf '%-24s %-18s %8s  %s\n' "------" "-----" "-------" "---"
+
+for rid in "${RUN_IDS[@]}"; do
+  state="$(run_state "$rid")"
+  pid="$(run_pid "$rid")"
+  started="$(run_started "$rid")"
+
+  if is_uint "$started"; then
+    elapsed=$(( NOW - started ))
+    elapsed_str="$(format_elapsed "$elapsed")"
+  else
+    elapsed_str="-"
+  fi
+
+  [[ -n "$pid" ]] || pid="-"
+  printf '%-24s %-18s %8s  %s\n' "$rid" "$state" "$elapsed_str" "$pid"
+done
+
+echo ""
+running="$(count_state running)"
+progressed="$(count_state progressed)"
+ready="$(count_state ready-for-verify)"
+failed="$(count_state failed)"
+stalled="$(count_state stalled)"
+echo "total=${#RUN_IDS[@]} running=${running} progressed=${progressed} ready_for_verify=${ready} failed=${failed} stalled=${stalled}"
