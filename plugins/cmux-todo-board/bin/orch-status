@@ -3,7 +3,26 @@
 # Reads .tasks/orchestrator/<run-id>/{state,pid,started,head} files and summarizes them.
 set -euo pipefail
 
-ORCH_DIR=".tasks/orchestrator"
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+resolve_target_repo() {
+  local candidate="${ORCH_REPO_ROOT:-}"
+  if [[ -n "$candidate" ]]; then
+    TARGET_REPO="$(git -C "$candidate" rev-parse --show-toplevel 2>/dev/null)" || die "not a git repo: $candidate"
+    return
+  fi
+
+  candidate="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -n "$candidate" ]]; then
+    TARGET_REPO="$candidate"
+    return
+  fi
+
+  TARGET_REPO="$PWD"
+}
+
+resolve_target_repo
+ORCH_DIR="$TARGET_REPO/.tasks/orchestrator"
 
 usage() {
   cat >&2 <<'EOF'

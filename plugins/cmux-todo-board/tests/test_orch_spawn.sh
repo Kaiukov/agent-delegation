@@ -48,6 +48,7 @@ printf '%s\n' "$output" > "$STUB_OUT"
 expected_args=(
   --issue "$ISSUE"
   --worktree "$WORKTREE"
+  --repo-root "$REPO_ROOT"
   --model "openai-codex/gpt-5.4-mini"
   --thinking "high"
   --tools "read,bash,edit,write,grep,find,ls"

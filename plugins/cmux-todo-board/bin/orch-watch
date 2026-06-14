@@ -5,7 +5,27 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ORCH_DIR=".tasks/orchestrator"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+resolve_target_repo() {
+  local candidate="${ORCH_REPO_ROOT:-}"
+  if [[ -n "$candidate" ]]; then
+    TARGET_REPO="$(git -C "$candidate" rev-parse --show-toplevel 2>/dev/null)" || die "not a git repo: $candidate"
+    return
+  fi
+
+  candidate="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -n "$candidate" ]]; then
+    TARGET_REPO="$candidate"
+    return
+  fi
+
+  TARGET_REPO="$PWD"
+}
+
+resolve_target_repo
+ORCH_DIR="$TARGET_REPO/.tasks/orchestrator"
 RUNS_DIR="$ORCH_DIR/runs"
 
 # ─── Defaults ──────────────────────────────────────────────────────────────
@@ -14,7 +34,6 @@ STALE_AFTER=1200   # 20 minutes
 HARD_TIMEOUT=3600  # 60 minutes
 
 # ─── Helpers ───────────────────────────────────────────────────────────────
-die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo "[orch-watch] $*" >&2; }
 
 is_uint() { [[ "${1:-}" =~ ^[0-9]+$ ]]; }

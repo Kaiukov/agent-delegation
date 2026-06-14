@@ -2,13 +2,13 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$DIR/../../.." && pwd)"
+TARGET_REPO=""
 ORCH_TMUX_SPAWN="${ORCH_TMUX_SPAWN:-$DIR/orch-tmux-spawn}"
 ORCH_CONFIG="${ORCH_CONFIG:-$DIR/orch-config}"
 
 usage() {
   cat >&2 <<'EOF'
-usage: orch-spawn --role <role> --task-id <issue>
+usage: orch-spawn --role <role> --task-id <issue> [--repo <path>]
 EOF
 }
 
@@ -19,6 +19,19 @@ die() {
 
 role=""
 task_id_raw=""
+repo_arg=""
+
+resolve_target_repo() {
+  local candidate="${ORCH_REPO_ROOT:-}"
+  if [[ -z "$candidate" && -n "$repo_arg" ]]; then
+    candidate="$repo_arg"
+  fi
+  if [[ -z "$candidate" ]]; then
+    candidate="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
+  fi
+  [[ -n "$candidate" ]] || die "unable to resolve target repo (set ORCH_REPO_ROOT, pass --repo, or run inside a git repo)"
+  TARGET_REPO="$(git -C "$candidate" rev-parse --show-toplevel 2>/dev/null)" || die "not a git repo: $candidate"
+}
 
 while (( $# > 0 )); do
   case "$1" in
@@ -40,6 +53,15 @@ while (( $# > 0 )); do
       task_id_raw="${1#--task-id=}"
       shift
       ;;
+    --repo)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      repo_arg="$2"
+      shift 2
+      ;;
+    --repo=*)
+      repo_arg="${1#--repo=}"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -57,8 +79,9 @@ done
 issue_digits="$(printf '%s' "$task_id_raw" | grep -oE '[0-9]+' | head -1 || true)"
 [[ -n "$issue_digits" ]] || die "task-id must contain an issue number: $task_id_raw"
 issue_num="$((10#$issue_digits))"
+resolve_target_repo
 branch="issue-${issue_num}-${role}"
-worktree="$(dirname "$REPO_ROOT")/wt-${branch}"
+worktree="$(dirname "$TARGET_REPO")/wt-${branch}"
 session="orch-${issue_num}-${role}"
 
 if ! profile_json="$("$ORCH_CONFIG" --get-profile "$role" --json)"; then
@@ -71,6 +94,7 @@ tools="$(jq -r '.tools' <<<"$profile_json")"
 exec "$ORCH_TMUX_SPAWN" \
   --issue "$issue_num" \
   --worktree "$worktree" \
+  --repo-root "$TARGET_REPO" \
   --model "$model" \
   --thinking "$thinking" \
   --tools "$tools" \

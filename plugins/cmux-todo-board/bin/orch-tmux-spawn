@@ -3,9 +3,9 @@
 # orch-statusline. tmux is session transport only; the worker runtime remains pi.
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$DIR/.." && pwd)"
-RUNNER="$REPO_ROOT/skills/cmux-agent-workflows/scripts/orch-tmux-runner.sh"
-BOARD_CONFIG="$REPO_ROOT/bin/board-config"
+PLUGIN_ROOT="$(cd "$DIR/.." && pwd)"
+RUNNER="$PLUGIN_ROOT/skills/cmux-agent-workflows/scripts/orch-tmux-runner.sh"
+BOARD_CONFIG="$PLUGIN_ROOT/bin/board-config"
 TMUX_BIN="${TMUX_BIN:-$(command -v tmux || true)}"
 DEFAULT_TOOLS="read,bash,edit,write,grep,find,ls"
 
@@ -25,6 +25,8 @@ quote_join() {
   printf '%s\n' "$out"
 }
 
+die() { echo "ERROR: $*" >&2; exit 1; }
+
 ISSUE=""
 WORKTREE=""
 TASK=""
@@ -35,6 +37,7 @@ THINKING=""
 TOOLS=""
 ROLE=""
 SESSION=""
+TARGET_REPO=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -58,6 +61,8 @@ while [[ $# -gt 0 ]]; do
     --role=*) ROLE="${1#--role=}"; shift ;;
     --session) [[ $# -ge 2 ]] || { usage; exit 2; }; SESSION="$2"; shift 2 ;;
     --session=*) SESSION="${1#--session=}"; shift ;;
+    --repo-root) [[ $# -ge 2 ]] || { usage; exit 2; }; TARGET_REPO="$2"; shift 2 ;;
+    --repo-root=*) TARGET_REPO="${1#--repo-root=}"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
@@ -94,10 +99,19 @@ else
   THINKING="${THINKING:-medium}"
 fi
 
+if [[ -z "$TARGET_REPO" ]]; then
+  TARGET_REPO="${ORCH_REPO_ROOT:-}"
+fi
+if [[ -z "$TARGET_REPO" ]]; then
+  TARGET_REPO="$(git -C "$WORKTREE" rev-parse --show-toplevel 2>/dev/null || true)"
+fi
+[[ -n "$TARGET_REPO" ]] || die "unable to resolve target repo (pass --repo-root, set ORCH_REPO_ROOT, or run inside the worktree's git repo)"
+TARGET_REPO="$(git -C "$TARGET_REPO" rev-parse --show-toplevel 2>/dev/null)" || die "not a git repo: $TARGET_REPO"
+
 MODEL_FULL="$PROVIDER/$MODEL_ID"
 SESSION="${SESSION:-orch-${ISSUE}-${ROLE}}"
-RUNS_DIR="$REPO_ROOT/.tasks/orchestrator/runs"
-LOGS_DIR="$REPO_ROOT/.tasks/orchestrator/logs"
+RUNS_DIR="$TARGET_REPO/.tasks/orchestrator/runs"
+LOGS_DIR="$TARGET_REPO/.tasks/orchestrator/logs"
 mkdir -p "$RUNS_DIR" "$LOGS_DIR"
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
 RUN_ID="${ISSUE}-${ROLE}-${ts}"
