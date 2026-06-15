@@ -5,6 +5,14 @@ This project adheres to semantic versioning.
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-06-15
+
+### Fixed
+- Orchestrator dispatch was incomplete: `orch-spawn` derived the worktree path and branch but never created the worktree or wrote `<worktree>/.task-spec.md`, so the documented `orch-dispatch` path died in `orch-tmux-spawn`'s `cd` into a non-existent directory ("stuck creating agent and worktree"). `orch-spawn` now creates the worktree (idempotent, off `HEAD`/`$ORCH_BASE_REF`) and materializes `.task-spec.md` from the GitHub issue body before handing off. `test_orch_spawn.sh` rewritten to assert the self-contained contract (worktree + branch + spec, idempotent re-dispatch) in a sandboxed temp repo.
+
+### Changed
+- `orchestrator-onboard` now: (1) locates the installed plugin and auto-wires the per-project `statusLine` to `orch-statusline` with `ORCH_REPO_ROOT` pinned to the host repo — fixes the missing / `· ?` statusline in fresh projects; (2) includes a tmux worker-spawn primer so the orchestrator knows the `orch-dispatch` contract up front.
+
 ## [0.9.1] - 2026-06-15
 
 ### Fixed
