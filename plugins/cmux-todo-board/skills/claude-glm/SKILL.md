@@ -1,6 +1,6 @@
 ---
 name: claude-glm
-description: How to run Claude Code in tmux against the zai provider (api.z.ai) with the glm-5.2 model, via ~/.claude/settings-glm.json and --dangerously-skip-permissions. Use when the user wants to launch/attach/headless-run claude on GLM, pick a glm model, or parallelize several claude agents in tmux panes.
+description: How to run Claude Code in tmux against the zai provider (api.z.ai) with glm models — glm-5.2[1m] is the default, also glm-5.1 / glm-4.7 / glm-4.5-air — via ~/.claude/settings-glm.json and --dangerously-skip-permissions. Use when the user wants to launch/attach/headless-run claude on GLM, pick a glm model, or parallelize several claude agents in tmux panes.
 ---
 
 # claude-glm — Claude Code на zai/glm-5.2 в tmux
@@ -49,6 +49,7 @@ glob в шелле.
 | Хочу модель | Флаг `--model` |
 |---|---|
 | **glm-5.2** (1M, по умолчанию) | не указывать, **или** `--model opus`, **или** `--model "glm-5.2[1m]"` |
+| glm-5.1 (Opus-уровень; бэкенд = 5.2) | `--model glm-5.1` |
 | glm-4.7 | `--model sonnet`, **или** `--model glm-4.7` |
 | glm-4.5-air (быстрая) | `--model haiku`, **или** `--model glm-4.5-air` |
 
@@ -119,3 +120,9 @@ claude --dangerously-skip-permissions --settings ~/.claude/settings-glm.json \
    «чистый» запуск без дефолтных настроек — проверяй, что не перехватывается.
 5. **Язык интерфейса = Russian** (из settings) — ответы claude будут на русском
    согласно глобальной инструкции.
+6. **`glm-5.1` доступна, но её бэкенд — `glm-5.2`** (zai отдаёт `responseModel:
+   "glm-5.2"`). `--model glm-5.1` принимается endpoint'ом и проверена live
+   (отвечает `OK`, exit 0) — подходит для «hard»-задач уровня Opus, но по
+   reasoning крайне многословна и может накручивать огромный объём `thinking`.
+   Дефолт `glm-5.2[1m]` обычно предпочтительнее; 5.1 — осознанный выбор под
+   тяжёлые задачи.
