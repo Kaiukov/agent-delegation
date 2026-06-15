@@ -38,7 +38,9 @@ The lifecycle is **Phase 0 Preflight → 1 Onboard → 2 Dispatch → 3 Standby 
 
 ## Phase 0: Preflight
 
-Discover the world before touching it. Fast, fail-fast, one ✓/✗ line each.
+Just enough to activate. Fast, fail-fast, one ✓/✗ line each. **Do NOT** pull the
+issue backlog, scan commit history, or diff the tree here — that's dispatch/triage
+work (Phase 2), not activation.
 
 ```bash
 HOST_REPO="${ORCH_REPO_ROOT:-$(git rev-parse --show-toplevel)}"
@@ -52,44 +54,15 @@ BIN="$PLUGIN_DIR/bin"      # orch-dispatch, orch-status, orch-statusline, board-
 - ✓/✗ `$PLUGIN_DIR` resolved and `$BIN/orch-dispatch` is executable
 - If any ✗ → tell the user the single fix and stop.
 
-**Profile discovery — TWO resolvers, don't confuse them:**
-
-- **`orch-config`** is what `orch-dispatch` actually uses. Only three roles:
-  `repo-scout` / `backend` / `reviewer`, all `openai-codex/gpt-5.4-mini`
-  (thinking low / **high** / medium). `backend` at **high** is the stall trigger
-  (Phase 2/3). `"$BIN/orch-config" --get-profile backend --json`.
-- **`board-config`** is the richer profile set used by the lower-level
-  `worker-spawn --profile` (the table in Phase 2). Profiles: `backend`,
-  `backend-fast`, `docs`, `test`, `tiny-patch`, `review`, `repo-scout`,
-  `frontend`, `frontend-top`. `"$BIN/board-config" --get-profile <name> --json`.
-
-Don't guess a name — list/resolve it from the right resolver for your path.
-
-**Git state check** — a `ready` issue is often already done in uncommitted code:
+One cheap liveness snapshot — active runs only, so you don't double-dispatch:
 
 ```bash
-git -C "$HOST_REPO" status --short
-git -C "$HOST_REPO" diff --stat
+"$BIN/orch-status" 2>/dev/null; tmux ls 2>/dev/null | grep '^orch-' || true
 ```
 
-**Board-sync check** (see pitfalls below):
-
-```bash
-"$BIN/orch-status" 2>/dev/null                       # active runs
-"$BIN/board-status" 2>/dev/null                      # inbox/ready/in-progress/done
-tmux ls 2>/dev/null | grep '^orch-'                  # live transport sessions
-```
-
-### Board-sync pitfalls (drift to call out, not act on blindly)
-
-- **`in-progress` with no active run** — `orch-status` empty but an issue still
-  carries `in-progress`. The status is stale; the work may already be committed.
-  Reconcile (close/move to done), don't re-dispatch.
-- **`ready` already done in uncommitted code** — a working-tree batch already
-  implements a `ready` issue. Commit/close it instead of dispatching a duplicate
-  worker. Diff against the issue's acceptance first.
-- A run-file `running` with **no live tmux session / dead pid** = the runner died
-  before updating state. Flag it as stale — do not report it as healthy.
+That's activation. Stop here and hand back — don't enumerate `gh issue list`,
+`board-status`, git diff, or commit history until the user actually asks to
+dispatch or triage.
 
 ---
 
@@ -129,12 +102,29 @@ runs the hard gate and never merges/releases without explicit OK.
 
 One `ready` issue → one worker → one branch → one PR.
 
-### Pre-flight per issue
+### Pre-flight per issue (now is when you look at the backlog)
 
 - `gh issue view <n>` — read the full body; the issue IS the brief seed.
-- Re-check it isn't already done in uncommitted code (Phase 0 board-sync).
+- **Don't dispatch a duplicate.** Check the work isn't already done in
+  uncommitted code or a stale board entry:
+  ```bash
+  git -C "$HOST_REPO" status --short && git -C "$HOST_REPO" diff --stat
+  "$BIN/board-status" 2>/dev/null      # inbox/ready/in-progress/done
+  ```
+  Drift to reconcile (don't re-dispatch blindly): an `in-progress` issue with no
+  active run = stale (work likely already committed → close/move to done); a
+  `ready` issue already implemented in a working-tree batch → commit/close it;
+  a run-file `running` with no live tmux session / dead pid = the runner died,
+  flag it stale.
 - Pick the **narrowest** role: `repo-scout` (read-only recon), `backend`
   (implement), `reviewer` (read-only review).
+
+**Two profile resolvers — don't confuse them:** `orch-dispatch` resolves via
+**`orch-config`** (only `repo-scout`/`backend`/`reviewer`, all
+`openai-codex/gpt-5.4-mini`, thinking low/**high**/medium — `backend`@high is the
+stall trigger below). The richer **`board-config`** set (table below) is for the
+lower-level `worker-spawn --profile`. Resolve, don't guess:
+`"$BIN/orch-config" --get-profile backend --json`.
 
 ### The one-liner (self-contained since v0.9.2)
 
