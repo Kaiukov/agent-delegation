@@ -4,7 +4,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 ORCH_SPAWN="$REPO_ROOT/plugins/cmux-todo-board/bin/orch-spawn"
-REAL_REPO="/Users/oleksandrkaiukov/Code/claude-code-cmux-todo-plugin"
 
 if [[ ! -x "$ORCH_SPAWN" ]]; then
   echo "FAIL: orch-spawn not found at $ORCH_SPAWN"
@@ -14,10 +13,19 @@ fi
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
+# --- Isolated host repo so worktree creation is sandboxed (never touches the real repo).
+HOST="$TMPDIR/host"
+mkdir -p "$HOST"
+git -C "$HOST" init -q
+git -C "$HOST" config user.email t@t && git -C "$HOST" config user.name t
+echo seed > "$HOST/seed.txt"
+git -C "$HOST" add seed.txt && git -C "$HOST" commit -qm seed
+HOST="$(git -C "$HOST" rev-parse --show-toplevel)"   # canonical (macOS /private symlink)
+
 STUB_LOG="$TMPDIR/orch-tmux-spawn.log"
-STUB_OUT="$TMPDIR/orch-tmux-spawn.out"
 mkdir -p "$TMPDIR/bin"
 
+# Stub orch-tmux-spawn: record args, emit a marker.
 cat > "$TMPDIR/bin/orch-tmux-spawn" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -26,30 +34,31 @@ printf 'stubbed orch-tmux-spawn\n'
 EOF
 chmod +x "$TMPDIR/bin/orch-tmux-spawn"
 
+# Stub gh: force the .task-spec.md fallback path deterministically (no network).
+cat > "$TMPDIR/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+chmod +x "$TMPDIR/bin/gh"
+
+export PATH="$TMPDIR/bin:$PATH"
 export ORCH_TMUX_SPAWN="$TMPDIR/bin/orch-tmux-spawn"
 export ORCH_TMUX_SPAWN_LOG="$STUB_LOG"
 export ORCH_CONFIG="$REPO_ROOT/plugins/cmux-todo-board/bin/orch-config"
-export ORCH_REPO_ROOT="$REPO_ROOT"
+export ORCH_REPO_ROOT="$HOST"
 
 ISSUE="4711"
 ROLE="backend"
 BRANCH="issue-${ISSUE}-${ROLE}"
-WORKTREE="$(dirname "$REPO_ROOT")/wt-${BRANCH}"
+WORKTREE="$(dirname "$HOST")/wt-${BRANCH}"
 SESSION="orch-${ISSUE}-${ROLE}"
 
-if [[ -d "$REAL_REPO" ]]; then
-  before_worktrees="$(git -C "$REAL_REPO" worktree list --porcelain | awk '/^worktree / {print $2}' | grep '/wt-issue-' || true)"
-else
-  before_worktrees=""
-fi
-
 output="$($ORCH_SPAWN --role "$ROLE" --task-id "$ISSUE")"
-printf '%s\n' "$output" > "$STUB_OUT"
 
 expected_args=(
   --issue "$ISSUE"
   --worktree "$WORKTREE"
-  --repo-root "$REPO_ROOT"
+  --repo-root "$HOST"
   --model "openai-codex/gpt-5.4-mini"
   --thinking "high"
   --tools "read,bash,edit,write,grep,find,ls"
@@ -91,16 +100,38 @@ else
   exit 1
 fi
 
-if [[ -d "$REAL_REPO" ]]; then
-  after_worktrees="$(git -C "$REAL_REPO" worktree list --porcelain | awk '/^worktree / {print $2}' | grep '/wt-issue-' || true)"
-  if [[ "$before_worktrees" == "$after_worktrees" ]]; then
-    echo "PASS: no new real wt-issue worktrees were created"
-  else
-    echo "FAIL: real worktree list changed"
-    printf 'before:\n%s\n' "$before_worktrees"
-    printf 'after:\n%s\n' "$after_worktrees"
-    exit 1
-  fi
+# --- New contract: orch-spawn is self-contained — it creates the worktree, the
+# branch, and materializes the worker's .task-spec.md before handing off.
+if [[ -d "$WORKTREE" ]]; then
+  echo "PASS: worktree created"
+else
+  echo "FAIL: worktree not created at $WORKTREE"
+  exit 1
 fi
+
+if git -C "$HOST" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+  echo "PASS: branch $BRANCH created"
+else
+  echo "FAIL: branch $BRANCH not created"
+  exit 1
+fi
+
+if [[ -s "$WORKTREE/.task-spec.md" ]]; then
+  echo "PASS: .task-spec.md materialized"
+else
+  echo "FAIL: .task-spec.md missing or empty"
+  exit 1
+fi
+
+# Idempotency: a second dispatch must not fail when worktree/branch already exist.
+if $ORCH_SPAWN --role "$ROLE" --task-id "$ISSUE" >/dev/null 2>&1; then
+  echo "PASS: re-dispatch is idempotent (existing worktree/branch reused)"
+else
+  echo "FAIL: re-dispatch errored on existing worktree/branch"
+  exit 1
+fi
+
+# Cleanup sandboxed worktree (TMPDIR trap removes the rest).
+git -C "$HOST" worktree remove "$WORKTREE" --force 2>/dev/null || true
 
 echo "All orch-spawn tests passed."

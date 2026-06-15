@@ -91,6 +91,40 @@ model="$(jq -r '.model' <<<"$profile_json")"
 thinking="$(jq -r '.thinking' <<<"$profile_json")"
 tools="$(jq -r '.tools' <<<"$profile_json")"
 
+# --- V1 dispatch is self-contained: the worktree and its task spec must exist
+# before orch-tmux-spawn cd's into them. orch-tmux-spawn does NOT create them,
+# so do it here (idempotent: never clobber a worktree/spec the orchestrator
+# pre-created via the manual wt-new.sh flow).
+ensure_worktree() {
+  [[ -d "$worktree" ]] && return 0
+  local base_ref="${ORCH_BASE_REF:-HEAD}"
+  if git -C "$TARGET_REPO" show-ref --verify --quiet "refs/heads/$branch"; then
+    git -C "$TARGET_REPO" worktree add "$worktree" "$branch" >&2 \
+      || die "git worktree add for existing branch '$branch' failed"
+  else
+    git -C "$TARGET_REPO" worktree add -b "$branch" "$worktree" "$base_ref" >&2 \
+      || die "git worktree add -b '$branch' off '$base_ref' failed"
+  fi
+}
+
+write_task_spec() {
+  local spec="$worktree/.task-spec.md"
+  [[ -f "$spec" ]] && return 0
+  local body=""
+  if body="$( ( cd "$TARGET_REPO" && gh issue view "$issue_num" \
+                  --json number,title,body \
+                  -q '"# Task: #" + (.number|tostring) + " — " + .title + "\n\n" + .body' \
+              ) 2>/dev/null )" && [[ -n "$body" ]]; then
+    printf '%s\n' "$body" > "$spec"
+  else
+    printf '# Task: #%s\n\n(GitHub issue body unavailable — orchestrator must fill in the brief.)\n' \
+      "$issue_num" > "$spec"
+  fi
+}
+
+ensure_worktree
+write_task_spec
+
 exec "$ORCH_TMUX_SPAWN" \
   --issue "$issue_num" \
   --worktree "$worktree" \
