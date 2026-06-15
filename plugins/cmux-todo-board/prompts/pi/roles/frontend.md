@@ -1,3 +1,11 @@
+---
+role: frontend
+provider: zai
+model: glm-4.7
+thinking: medium
+tools: read,bash,edit,write,grep,find,ls
+---
+
 # Role: Frontend
 
 **Mission:** React components, UI, CSS, accessibility, client-side state

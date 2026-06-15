@@ -5,7 +5,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(cd "$DIR/.." && pwd)"
 RUNNER="$PLUGIN_ROOT/skills/cmux-agent-workflows/scripts/orch-tmux-runner.sh"
-BOARD_CONFIG="$PLUGIN_ROOT/bin/board-config"
+ROLE_CONFIG="$PLUGIN_ROOT/bin/role-config"
 TMUX_BIN="${TMUX_BIN:-$(command -v tmux || true)}"
 DEFAULT_TOOLS="read,bash,edit,write,grep,find,ls"
 
@@ -86,7 +86,7 @@ PROVIDER=""
 MODEL_ID=""
 
 if [[ -n "$PROFILE" ]]; then
-  profile_json="$("$BOARD_CONFIG" --get-profile "$PROFILE" --json)"
+  profile_json="$("$ROLE_CONFIG" --get-profile "$PROFILE" --json)"
   PROVIDER="$(jq -r '.provider' <<<"$profile_json")"
   MODEL_ID="$(jq -r '.model' <<<"$profile_json")"
   THINKING="${THINKING:-$(jq -r '.thinking' <<<"$profile_json")}"

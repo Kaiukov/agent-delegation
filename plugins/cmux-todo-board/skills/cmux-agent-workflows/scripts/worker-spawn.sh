@@ -79,8 +79,8 @@ if [[ -n "$PROFILE" ]]; then
   (( ${#ARGS[@]} <= 2 )) || { usage; die "too many args for --profile mode"; }
   LABEL="${ARGS[1]:-}"
   REPO_ROOT="$(cd "$DIR/../../.." && pwd)"
-  if ! PROFILE_JSON="$($REPO_ROOT/bin/board-config --get-profile "$PROFILE" --json 2>&1)"; then
-    die "board-config --get-profile $PROFILE failed: $PROFILE_JSON"
+  if ! PROFILE_JSON="$($REPO_ROOT/bin/role-config --get-profile "$PROFILE" --json 2>&1)"; then
+    die "role-config --get-profile $PROFILE failed: $PROFILE_JSON"
   fi
   PROVIDER="$(jq -r '.provider' <<<"$PROFILE_JSON")"
   MODEL="$(jq -r '.model' <<<"$PROFILE_JSON")"

@@ -15,8 +15,8 @@ Dispatch ONE `ready` issue to one headless `pi` worker. `$BIN` = the plugin's
   often turns out already implemented in a working-tree batch — commit/close it
   instead of dispatching (see orchestrator-onboard board-sync).
 - Pick the **narrowest** role: `repo-scout` (read-only recon), `backend`
-  (implement), `reviewer` (read-only review). `orch-config` resolves the role's
-  model/thinking/tools.
+  (implement), `reviewer` (read-only review). `role-config` resolves the role's
+  model/thinking/tools from `prompts/pi/roles/<role>.md` frontmatter.
 
 ## 1. The one-liner (self-contained since v0.9.2)
 ```bash
@@ -44,17 +44,17 @@ A good `.task-spec.md` has: **exact files to touch** + **out-of-scope / do-NOT-t
 + **acceptance commands** (tsc/test/grep) + anti-rules (no push, no PR, no merge)
 + the line **"act, don't overthink — make the edits, then verify"**.
 
-## 3. Pick a stall-safe thinking level
-`orch-config`'s `backend` role is `openai-codex/gpt-5.4-mini` at **thinking=high**
-— and high + a small model = analysis paralysis (0 tool calls → no heartbeat →
-`killed_stalled` at the 120s watchdog; out.json balloons with empty
-`thinking_delta`). `orch-dispatch` cannot override thinking, so for
-implementation work dispatch via the lower layer at **medium**:
+## 3. Thinking & stall risk
+Profiles set `thinking` in `role-config` (`backend` = `zai/glm-4.7` at **medium**).
+To override for one run, dispatch via the lower layer:
 ```bash
 "$BIN/orch-tmux-spawn" --issue <n> --worktree "$WT" --repo-root <host> \
-  --model openai-codex/gpt-5.4-mini --thinking medium \
+  --model zai/glm-4.7 --thinking medium \
   --tools read,bash,edit,write,grep,find,ls --role backend --session orch-<n>-backend
 ```
+Watch the hard-task profile `glm-5.1`: very verbose reasoning (hundreds of MB of
+`thinking_delta`) can approach the 120s `worker-watch` stall threshold — keep it
+at `medium`. `zai` needs `ZAI_API_KEY` in the worker environment.
 Rule of thumb (see the model→stall-risk table in `cmux-agent-workflows`):
 high + small model = stall; use **medium**, or a larger model for nuanced work.
 

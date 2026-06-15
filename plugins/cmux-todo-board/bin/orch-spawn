@@ -4,7 +4,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_REPO=""
 ORCH_TMUX_SPAWN="${ORCH_TMUX_SPAWN:-$DIR/orch-tmux-spawn}"
-ORCH_CONFIG="${ORCH_CONFIG:-$DIR/orch-config}"
+ROLE_CONFIG="${ROLE_CONFIG:-$DIR/role-config}"
 
 usage() {
   cat >&2 <<'EOF'
@@ -84,10 +84,12 @@ branch="issue-${issue_num}-${role}"
 worktree="$(dirname "$TARGET_REPO")/wt-${branch}"
 session="orch-${issue_num}-${role}"
 
-if ! profile_json="$("$ORCH_CONFIG" --get-profile "$role" --json)"; then
-  die "orch-config failed for role '$role'"
+if ! profile_json="$("$ROLE_CONFIG" --get-profile "$role" --json)"; then
+  die "role-config failed for role '$role'"
 fi
-model="$(jq -r '.model' <<<"$profile_json")"
+provider="$(jq -r '.provider' <<<"$profile_json")"
+model_id="$(jq -r '.model' <<<"$profile_json")"
+model="$provider/$model_id"
 thinking="$(jq -r '.thinking' <<<"$profile_json")"
 tools="$(jq -r '.tools' <<<"$profile_json")"
 
