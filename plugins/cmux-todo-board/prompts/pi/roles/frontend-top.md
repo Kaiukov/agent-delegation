@@ -1,3 +1,11 @@
+---
+role: frontend-top
+provider: zai
+model: glm-5.1
+thinking: medium
+tools: read,bash,edit,write,grep,find,ls
+---
+
 # Role: Frontend Top
 
 **Mission:** Major frontend architecture, design system evolution, hard

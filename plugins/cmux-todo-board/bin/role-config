@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""role-config — single source of truth for worker role profiles.
+
+Each role's launch contract (provider/model/thinking/tools) lives in the YAML
+frontmatter of its prompt: prompts/pi/roles/<role>.md. A few profile *variants*
+(backend-fast/test/tiny-patch) and the `reviewer` alias resolve onto a base role
+with field overrides. Per-project overrides come from `.tasks/config.json`
+(`.profiles.<name>`, deep-merged per field).
+
+Output shape (canonical): {"role","provider","model","thinking","tools"}
+plus "model_status" when present.
+
+Usage:
+  role-config --list-profiles
+  role-config --get-profile <name> [--json|--provider|--model|--thinking|--tools|--role]
+"""
+import json
+import os
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROLES_DIR = os.path.join(ROOT, "prompts", "pi", "roles")
+
+# Profile variants / aliases that reuse a base role's prompt with overrides.
+# Keep board-config's historical profile names resolvable from one source.
+VARIANTS = {
+    "reviewer":    {"base": "review"},
+    "backend-fast": {"base": "backend", "thinking": "low"},
+    "test":         {"base": "backend", "thinking": "medium"},
+    "tiny-patch":   {"base": "backend", "thinking": "low"},
+}
+
+FIELDS = ("provider", "model", "thinking", "tools", "model_status")
+
+
+def base_roles():
+    if not os.path.isdir(ROLES_DIR):
+        return []
+    out = []
+    for fn in sorted(os.listdir(ROLES_DIR)):
+        if fn.endswith(".md"):
+            name = fn[:-3]
+            if name not in VARIANTS:  # reviewer.md exists but is an alias
+                out.append(name)
+    return out
+
+
+def all_profiles():
+    # base roles first, then variants
+    return base_roles() + [v for v in VARIANTS if v not in base_roles()]
+
+
+def parse_frontmatter(path):
+    with open(path, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    if not text.startswith("---"):
+        return {}
+    end = text.find("\n---", 3)
+    if end == -1:
+        return {}
+    block = text[3:end].strip("\n")
+    data = {}
+    for line in block.splitlines():
+        line = line.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        if ":" not in line:
+            continue
+        k, _, v = line.partition(":")
+        data[k.strip()] = v.strip()
+    return data
+
+
+def load_config_overlay(name):
+    cfg = os.path.join(os.getcwd(), ".tasks", "config.json")
+    if not os.path.isfile(cfg):
+        return {}
+    try:
+        with open(cfg, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    prof = (data.get("profiles") or {}).get(name)
+    return prof if isinstance(prof, dict) else {}
+
+
+def resolve(name):
+    """Return canonical profile dict or raise KeyError."""
+    overrides = {}
+    role_name = name
+    if name in VARIANTS:
+        v = dict(VARIANTS[name])
+        role_name = v.pop("base")
+        overrides = v
+    md = os.path.join(ROLES_DIR, role_name + ".md")
+    if not os.path.isfile(md):
+        raise KeyError(name)
+    fm = parse_frontmatter(md)
+    if not fm:
+        raise KeyError(name)
+    prof = {
+        "role": fm.get("role", role_name),
+        "provider": fm.get("provider", ""),
+        "model": fm.get("model", ""),
+        "thinking": fm.get("thinking", "medium"),
+        "tools": fm.get("tools", "read,bash,edit,write,grep,find,ls"),
+    }
+    if fm.get("model_status"):
+        prof["model_status"] = fm["model_status"]
+    # variant overrides
+    for k, val in overrides.items():
+        prof[k] = val
+    # per-project overlay (deep-merge per field)
+    for k, val in load_config_overlay(name).items():
+        if k in FIELDS or k == "role":
+            prof[k] = val
+    return prof
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        sys.stdout.write(__doc__)
+        return 0
+    if argv[0] == "--list-profiles":
+        for p in all_profiles():
+            print(p)
+        return 0
+    if argv[0] == "--get-profile":
+        if len(argv) < 2:
+            sys.stderr.write("role-config: --get-profile needs <name>\n")
+            return 2
+        name = argv[1]
+        try:
+            prof = resolve(name)
+        except KeyError:
+            sys.stderr.write(
+                "role-config: unknown profile '%s'. Valid: %s\n"
+                % (name, ", ".join(all_profiles()))
+            )
+            return 1
+        selectors = argv[2:]
+        # field selectors
+        for sel, key in (("--provider", "provider"), ("--model", "model"),
+                         ("--thinking", "thinking"), ("--tools", "tools"),
+                         ("--role", "role")):
+            if sel in selectors:
+                print(prof.get(key, ""))
+                return 0
+        # default / --json → JSON
+        order = ["role", "provider", "model", "thinking", "tools"]
+        out = {k: prof[k] for k in order if k in prof}
+        if "model_status" in prof:
+            out["model_status"] = prof["model_status"]
+        print(json.dumps(out))
+        return 0
+    sys.stderr.write("role-config: unknown command. Use --help.\n")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

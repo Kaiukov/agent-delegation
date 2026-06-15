@@ -66,9 +66,8 @@ grep -cE '"toolcall_start"|"text_delta"' "$WT/out.json"  # ~0 = stalled, >0 = wo
   match the spec, kill before commit and sharpen `.task-spec.md` (exact files +
   do-NOT-touch). A thin brief is the root cause.
 
-**Model → thinking → stall risk** (orch-config dispatches `backend` as
-`openai-codex/gpt-5.4-mini` at thinking=**high** — override to medium for
-implementation):
+**Model → thinking → stall risk** (profiles resolve via `role-config`; `backend`
+= `zai/glm-4.7` at thinking=medium):
 
 | Model | thinking | Stall risk | Use for |
 |---|---|---|---|
@@ -92,10 +91,12 @@ use a larger model or do it directly.
   dependency install only when a `package.json` exists.
 - **Hard gate before merge**: run `verify.sh`; TS projects use the archived legacy-reference helper.
   Never merge on the worker's self-report.
-- **Model profiles** are config-driven via `.tasks/config.json` (see `bin/board-config --get-profile <name>`).
-  Profiles are defined for each role — `backend`, `backend-fast`, `docs`, `review`, `test`, `tiny-patch`,
-  `repo-scout`, `frontend`, `frontend-top` — each carrying the full Pi launch contract (provider, model,
-  thinking, tools). Resolve the profile values into the canonical headless `pi -p` launch.
+- **Role profiles** are a single source of truth in `prompts/pi/roles/<role>.md`
+  frontmatter, resolved by `bin/role-config --get-profile <name> [--json]`
+  (per-project overrides: `.tasks/config.json` → `.profiles.<name>`, deep-merged).
+  Profiles — `backend`, `backend-fast`, `docs`, `review`/`reviewer`, `test`, `tiny-patch`,
+  `repo-scout`, `frontend`, `frontend-top` — each carry the full Pi launch contract
+  (provider, model, thinking, tools). (`board-config` now handles language only.)
 
 
 

@@ -1,3 +1,11 @@
+---
+role: backend
+provider: zai
+model: glm-4.7
+thinking: medium
+tools: read,bash,edit,write,grep,find,ls
+---
+
 # Role: Backend
 
 **Mission:** APIs, databases, services, TypeScript, shell scripts, refactoring,

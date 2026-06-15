@@ -159,7 +159,7 @@ model="$(jq -r '.model' <<<"$json")"
 thinking="$(jq -r '.profile.thinking' <<<"$json")"
 status="$(jq -r '.status' <<<"$json")"
 log_file="$(jq -r '.log_file' <<<"$json")"
-if [[ "$model" == "opencode/deepseek-v4-flash-free" && "$thinking" == "high" && "$status" == "done" && "$log_file" == *"/.tasks/orchestrator/logs/152-backend-"*".log" ]]; then
+if [[ "$model" == "zai/glm-4.7" && "$thinking" == "high" && "$status" == "done" && "$log_file" == *"/.tasks/orchestrator/logs/152-backend-"*".log" ]]; then
   echo "PASS"
 else
   echo "FAIL: model=$model thinking=$thinking status=$status log_file=$log_file"

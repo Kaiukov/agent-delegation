@@ -51,7 +51,7 @@ One ready issue → one worker. The single entry point is `orch-dispatch`:
 "$BIN/orch-dispatch" --task-id <issue> --role <repo-scout|backend|reviewer>
 ```
 What it does for you (self-contained — you do NOT pre-create anything):
-1. resolves the worker model/thinking/tools from `orch-config` for the role
+1. resolves the worker model/thinking/tools from `role-config` (role `.md` frontmatter) for the role
    (worker runtime = `openai-codex/gpt-5.4-mini`, thinking low|med|high; free
    models can 429 — issue #155; if a worker loops on empty reasoning, that's
    the codex thinking=high bug — re-dispatch at medium);

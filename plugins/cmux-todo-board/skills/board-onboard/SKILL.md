@@ -91,7 +91,7 @@ See `board-onboard-lite` for the compact reference. Full script documentation li
 > **On-demand detail — task spec placement:** The `.task-spec.md` MUST live inside the worker
 > worktree (`<worktree>/.task-spec.md`), never `/tmp` or external dirs, to avoid
 > 'Access external directory' permission prompts. Model profiles are resolved via
-> `board-config --get-profile <name>`. 
+> `role-config --get-profile <name>`. 
 
 ## 5. On invocation
 

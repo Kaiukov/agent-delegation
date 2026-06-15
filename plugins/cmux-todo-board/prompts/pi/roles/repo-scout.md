@@ -1,3 +1,11 @@
+---
+role: repo-scout
+provider: zai
+model: glm-4.7
+thinking: medium
+tools: read,bash,grep,find,ls
+---
+
 # Role: Repo Scout
 
 **Mission:** Read-only codebase reconnaissance. Map structure, trace control

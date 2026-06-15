@@ -1,3 +1,11 @@
+---
+role: docs
+provider: zai
+model: glm-4.5-air
+thinking: low
+tools: read,bash,edit,write,grep,find,ls
+---
+
 # Role: Docs
 
 **Mission:** Documentation, changelog entries, formatting, renames,

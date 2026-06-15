@@ -23,10 +23,11 @@ other keys already in the file. The code is normalized (uppercased, trimmed).
 Rejects empty or whitespace-only input.
 
 ```
-board-config --get-profile <name> [--provider] [--model] [--thinking] [--tools] [--json]
+role-config --get-profile <name> [--provider] [--model] [--thinking] [--tools] [--json]
 ```
-Resolve a Pi role profile. Reads overrides from `.profiles.<name>` in
-`.tasks/config.json`, falls back to built-in defaults.
+Resolve a Pi role profile — single source: `prompts/pi/roles/<role>.md` frontmatter.
+Reads overrides from `.profiles.<name>` in `.tasks/config.json`.
+(`board-config` itself now handles language only.)
 
 - `--provider` — print the provider field only.
 - `--model` — print the model field only (default if no selector).

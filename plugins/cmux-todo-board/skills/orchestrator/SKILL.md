@@ -119,12 +119,12 @@ One `ready` issue → one worker → one branch → one PR.
 - Pick the **narrowest** role: `repo-scout` (read-only recon), `backend`
   (implement), `reviewer` (read-only review).
 
-**Two profile resolvers — don't confuse them:** `orch-dispatch` resolves via
-**`orch-config`** (only `repo-scout`/`backend`/`reviewer`, all
-`openai-codex/gpt-5.4-mini`, thinking low/**high**/medium — `backend`@high is the
-stall trigger below). The richer **`board-config`** set (table below) is for the
-lower-level `worker-spawn --profile`. Resolve, don't guess:
-`"$BIN/orch-config" --get-profile backend --json`.
+**One source of truth for profiles:** every role's launch contract
+(provider/model/thinking/tools) lives in the frontmatter of its prompt
+(`prompts/pi/roles/<role>.md`) and is resolved by **`role-config`** — there is no
+separate orch-config/board-config profile set. Inspect, don't guess:
+`"$BIN/role-config" --get-profile <name> --json` (or `--list-profiles`).
+Per-project overrides: `.tasks/config.json` → `.profiles.<name>` (deep-merged per field).
 
 ### The one-liner (self-contained since v0.9.2)
 
@@ -165,43 +165,37 @@ A good `.task-spec.md` has:
 > that base layer BEFORE spawning the worktree**, else the worker rewrites or
 > duplicates files it can't see.
 
-### Pick a stall-safe thinking level
+### Override thinking per dispatch
 
-`orch-dispatch` cannot override thinking. If the resolved profile is a small
-model at `thinking=high`, dispatch implementation work via the lower layer at
-**medium** instead:
+`orch-dispatch` uses the profile's `thinking`. To override for one run, use the
+lower layer:
 
 ```bash
 "$BIN/orch-tmux-spawn" --issue <n> --worktree "$WT" --repo-root "$HOST_REPO" \
-  --model openai-codex/gpt-5.4-mini --thinking medium \
+  --model zai/glm-4.7 --thinking medium \
   --tools read,bash,edit,write,grep,find,ls --role backend --session orch-<n>-backend
 ```
 
-### Model → thinking → stall risk
+### Profiles (role-config — single source)
 
-Heads-up: `orch-dispatch --role backend` resolves via **orch-config** to
-`openai-codex/gpt-5.4-mini` at **thinking=high** — that's the documented stall
-case, override to medium. The table below is the **board-config** set (used by
-`worker-spawn --profile`), for when you pick a profile directly:
+| Profile | Role prompt | Provider | Model | Thinking |
+|---|---|---|---|---|
+| backend | backend | zai | glm-4.7 | medium |
+| backend-fast | backend | zai | glm-4.7 | low |
+| docs | docs | zai | glm-4.5-air | low |
+| frontend | frontend | zai | glm-4.7 | medium |
+| frontend-top | frontend-top | zai | glm-5.1 | medium |
+| repo-scout | repo-scout | zai | glm-4.7 | medium |
+| review / reviewer | review | zai | glm-4.7 | medium |
+| test | backend | zai | glm-4.7 | medium |
+| tiny-patch | backend | zai | glm-4.7 | low |
 
-| Profile | Role | Provider | Model | Thinking | Stall Risk |
-|---|---|---|---|---|---|
-| backend | backend | opencode-go | deepseek-v4-pro | high | medium |
-| backend-fast | backend | opencode | deepseek-v4-flash-free | low | none |
-| repo-scout | review | opencode | nemotron-3-ultra-free | medium | low |
-| docs | docs | opencode | mimo-v2.5-free | low | none |
-| test | backend | openai-codex | gpt-5.4-mini | medium | low |
-| tiny-patch | backend | openai-codex | gpt-5.4-mini | low | none |
-| review | review | opencode-go | deepseek-v4-pro | high | medium |
-| frontend | frontend | anthropic | claude-sonnet-4-6 | medium | low |
-| frontend-top | frontend-top | anthropic | claude-opus-4-8 | high | medium |
-
-**Rule of thumb: `thinking=high` + small model = analysis paralysis.** Override
-to `--thinking medium`, or use a larger model for nuanced work. Free `*-free`
-models can 429 on agent work (#155) — fine for recon/docs, risky for implement.
-For precision-sensitive work (e.g. distinguishing render-blocking 3p scripts from
-inline JSON-LD that must NOT be touched), a small model lacks the precision — use
-a larger model or do it directly.
+`zai` needs `ZAI_API_KEY` in the worker environment. **Stall caveat:** `glm-5.1`
+is extremely verbose in reasoning (a simple task can emit hundreds of MB of
+`thinking`); it usually still finishes, but watch the 120s `worker-watch` stall
+threshold and keep it at `medium`. (`zai/glm-5.1` reports its backend as
+`glm-5.2`.) Edit a profile by changing its `prompts/pi/roles/<role>.md`
+frontmatter, or override per-project via `.tasks/config.json`.
 
 After dispatch → go straight to **Phase 3 (Standby)**.
 

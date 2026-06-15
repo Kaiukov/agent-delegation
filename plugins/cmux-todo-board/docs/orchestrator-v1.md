@@ -28,7 +28,7 @@ V1 roles are limited to:
 - `reviewer`
 
 ## V1 bin entrypoints
-- `orch-config` — resolve profile config by role
+- `role-config` — resolve role profile (provider/model/thinking/tools) from `prompts/pi/roles/<role>.md` frontmatter
 - `orch-dispatch` — accept `issue + role`, trigger spawn, return run status
 - `orch-spawn` — resolve the host repo (`ORCH_REPO_ROOT`/`--repo`/cwd), create a sibling worktree, session, and run state, then launch the worker
 - `orch-watch` — watch git/tmux signals and wake on progress
