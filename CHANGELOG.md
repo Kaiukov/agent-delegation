@@ -5,6 +5,14 @@ This project adheres to semantic versioning.
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-06-15
+
+### Added
+- Consolidated `orchestrator` skill — one skill covering the full lifecycle (Preflight → Onboard → Dispatch → Standby → Verify → Finish) with anti-temptation rules, the stall-watchdog (120s heartbeat → `KILLED_STALLED` exit 125) + `out.json` diagnostics, the sharp-`.task-spec.md`-vs-off-brief pattern, the `orch-config` (dispatch) vs `board-config` (richer profiles) distinction, and orphan/board-sync hygiene.
+
+### Changed
+- Fleshed out the thin `orchestrator-*` stubs (dispatch/standby/verify/finish/status) and `cmux-agent-workflows` with the real v0.9.2 mechanics and session learnings: self-contained dispatch, `--thinking medium` to avoid analysis-paralysis stalls, watch-the-diff standby (kill off-brief before commit), run-the-real-acceptance verify, local-only finish + post-round cleanup, and a model→thinking→stall-risk table.
+
 ## [0.9.2] - 2026-06-15
 
 ### Fixed
