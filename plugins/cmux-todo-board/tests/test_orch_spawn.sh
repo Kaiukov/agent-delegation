@@ -29,6 +29,7 @@ chmod +x "$TMPDIR/bin/orch-tmux-spawn"
 export ORCH_TMUX_SPAWN="$TMPDIR/bin/orch-tmux-spawn"
 export ORCH_TMUX_SPAWN_LOG="$STUB_LOG"
 export ORCH_CONFIG="$REPO_ROOT/plugins/cmux-todo-board/bin/orch-config"
+export ORCH_REPO_ROOT="$REPO_ROOT"
 
 ISSUE="4711"
 ROLE="backend"
