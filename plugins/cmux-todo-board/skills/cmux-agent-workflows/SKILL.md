@@ -47,6 +47,43 @@ worker-spawn.sh <worktree> <provider/model> [label]
 
 See the [canonical delegation cycle in `docs/ORCHESTRATOR.md`](../../docs/ORCHESTRATOR.md#headless-delegation-cycle) for the full worktree→headless-pi→dispatch→standby→verify→merge flow. After dispatch, the orchestrator MUST enter [standby mode](../../docs/ORCHESTRATOR.md#standby-after-dispatch) — wait on the worker process exit code, a new commit on the branch (git progress), and the branch commit. The per-script reference above documents each script's interface in detail.
 
+## Stall-watchdog, off-brief, and reading `out.json`
+
+`worker-watch.sh` kills a worker whose session heartbeat is older than the stall
+threshold (~120s). A headless `pi` worker's heartbeat comes from **tool calls** —
+a worker that only "thinks" emits no heartbeat and gets `killed_stalled`.
+
+**Diagnose from `out.json`:**
+```bash
+ls -lh "$WT/out.json"                                    # size: tens of MB = trouble
+grep -c '"type":"thinking"' "$WT/out.json"               # high = reasoning loop
+grep -cE '"toolcall_start"|"text_delta"' "$WT/out.json"  # ~0 = stalled, >0 = working
+```
+- **`killed_stalled` / huge out.json + 0 tool calls** → analysis paralysis. Kill,
+  re-dispatch at `--thinking medium`, and tighten the brief to "act, don't
+  overthink — make the edits, then verify". Don't wait it out.
+- **Off-brief** (busy but wrong files) → `git -C "$WT" diff --stat`; if it doesn't
+  match the spec, kill before commit and sharpen `.task-spec.md` (exact files +
+  do-NOT-touch). A thin brief is the root cause.
+
+**Model → thinking → stall risk** (orch-config dispatches `backend` as
+`openai-codex/gpt-5.4-mini` at thinking=**high** — override to medium for
+implementation):
+
+| Model | thinking | Stall risk | Use for |
+|---|---|---|---|
+| openai-codex/gpt-5.4-mini | high | **high** (analysis loop) | avoid for edits |
+| openai-codex/gpt-5.4-mini | medium | low | small/medium patches |
+| openai-codex/gpt-5.4-mini | low | none | tiny mechanical patches |
+| anthropic/claude-sonnet-4-6 | medium | low | nuanced frontend/impl |
+| anthropic/claude-opus-4-8 | high | low | hardest, ambiguity-rich tasks |
+| free `*-free` (opencode) | any | 429 risk | recon/docs (can rate-limit, #155) |
+
+Rule of thumb: **high thinking + small model = stall**. For perf/SEO-style work
+needing the worker to distinguish e.g. render-blocking 3p scripts from inline
+JSON-LD (which must NOT be touched), a small codex model lacks the precision —
+use a larger model or do it directly.
+
 ## Conventions (encoded in the scripts)
 
 - **Worktrees** branch off `origin/main` by default (override via `BASE_REF` env
