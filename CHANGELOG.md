@@ -1,248 +1,30 @@
 # Changelog
 
 All notable changes to this project are documented here.
-This project adheres to semantic versioning.
+This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0] - 2026-06-18
 
-## [0.9.3] - 2026-06-15
-
-### Added
-- Consolidated `orchestrator` skill — one skill covering the full lifecycle (Preflight → Onboard → Dispatch → Standby → Verify → Finish) with anti-temptation rules, the stall-watchdog (120s heartbeat → `KILLED_STALLED` exit 125) + `out.json` diagnostics, the sharp-`.task-spec.md`-vs-off-brief pattern, the `orch-config` (dispatch) vs `board-config` (richer profiles) distinction, and orphan/board-sync hygiene.
-
-### Changed
-- Fleshed out the thin `orchestrator-*` stubs (dispatch/standby/verify/finish/status) and `cmux-agent-workflows` with the real v0.9.2 mechanics and session learnings: self-contained dispatch, `--thinking medium` to avoid analysis-paralysis stalls, watch-the-diff standby (kill off-brief before commit), run-the-real-acceptance verify, local-only finish + post-round cleanup, and a model→thinking→stall-risk table.
-
-## [0.9.2] - 2026-06-15
-
-### Fixed
-- Orchestrator dispatch was incomplete: `orch-spawn` derived the worktree path and branch but never created the worktree or wrote `<worktree>/.task-spec.md`, so the documented `orch-dispatch` path died in `orch-tmux-spawn`'s `cd` into a non-existent directory ("stuck creating agent and worktree"). `orch-spawn` now creates the worktree (idempotent, off `HEAD`/`$ORCH_BASE_REF`) and materializes `.task-spec.md` from the GitHub issue body before handing off. `test_orch_spawn.sh` rewritten to assert the self-contained contract (worktree + branch + spec, idempotent re-dispatch) in a sandboxed temp repo.
-
-### Changed
-- `orchestrator-onboard` now: (1) locates the installed plugin and auto-wires the per-project `statusLine` to `orch-statusline` with `ORCH_REPO_ROOT` pinned to the host repo — fixes the missing / `· ?` statusline in fresh projects; (2) includes a tmux worker-spawn primer so the orchestrator knows the `orch-dispatch` contract up front.
-
-## [0.9.1] - 2026-06-15
-
-### Fixed
-- Role→prompt mapping (#159): added `prompts/pi/roles/repo-scout.md` and `reviewer.md` (read-only recon/review prompts) so `orch-config` roles resolve to real assets; `worker-spawn.sh` now hard-fails on a missing role/contract prompt instead of silently launching a worker with no role. `test_pi_prompt_assets.sh` asserts every `orch-config` profile resolves an existing `roles/<role>.md`.
-- Merge gate (#160): `pr-finish.sh`/`orch-finish` default to a LOCAL finish (worktree cleanup, no `gh pr merge`); merging is gated behind an explicit `--merge` flag with a y/N confirm. New `test_pr_finish_merge_gate.sh` proves the local path never merges.
-- Stale-heartbeat instant-kill (#156): `worker-watch.sh` bounds `heartbeat_mtime` by `WATCH_START`, so a stale session jsonl can no longer trip the stall timeout at t+0.
-- Read-only completion mode (#161): `worker-watch.sh` gains `--read-only` (completion = non-empty `out.json`, no commit required); `orch-tmux-runner.sh` derives read-only from the worker's tool set (no `edit`/`write`).
-- README (#162): reflects the headless `pi` runtime; dropped board-sync/cmux-panes/limit-monitor references, added the `orchestrator-*` skills.
-
-### Changed
-- Tests: removed obsolete `test_poll_wait.sh` (poll-wait.sh was cut in #151); made `test_orch_spawn.sh` cwd-independent via `ORCH_REPO_ROOT`.
-
-## [0.9.0] - 2026-06-14
+### Changed (BREAKING)
+- Refactored the repository from the `cmux-todo-board` GitHub-Issues board plugin
+  into a minimal **agent-delegation** system. The plugin was renamed
+  `cmux-todo-board` → `agent-delegation`.
 
 ### Added
-- V1 tmux/GitHub-first orchestrator (#153): `bin/orch-config`, `orch-dispatch`, `orch-spawn`, `orch-tmux-spawn`, `orch-watch`, `orch-status`, `orch-verify`, `orch-finish`, and `orch-statusline` (CODEX status line). Six `orchestrator-*` skills (onboard/dispatch/standby/status/verify/finish) and `docs/orchestrator-v1.md` + `docs/orchestrator-contracts.md`.
-- Orchestration profile registry `orch-config` resolving `repo-scout`/`backend`/`reviewer` to `openai-codex/gpt-5.4-mini` (thinking low/high/med) after free models rate-limited (#155).
-- `worker-watch.sh`: liveness watchdog + waiter for headless `pi` workers — PID + session-jsonl heartbeat, hard timeout, and stall/hung detection; supersedes poll-wait/coms-net waiters (#151).
-- `worker-spawn.sh`: thin headless launcher — resolves a `--profile` (or raw `provider/model`), layers `common-system` + role + `worker-contract` prompts onto `.task-spec.md`, spawns `pi -p` in the background, and prints the worker PID (#151).
-- `worker-contract.md`: binding worker-discipline prompt (restate → scope → forbidden gh/push/PR → prove-before-done → output) layered onto every worker (#152).
-
-### Changed
-- `orch-spawn` resolves worker model/thinking/tools via `orch-config` (separate from `board-config`) and launches via the `--model` path; naming is deterministic and locked by `test_orch_naming.sh` (#154).
-- Orchestrator now dispatches workers as headless `pi -p` background processes (exit-code callback + branch commit) instead of cmux panes; cmux 3×3 cockpit demoted to an archived dashboard (#151).
-- `board-onboard` / `board-onboard-lite` delegation cycle now names the concrete headless scripts (`wt-new.sh → worker-spawn.sh → worker-watch.sh → verify.sh → pr-finish.sh`) so the orchestrator knows exactly how to launch and standby on workers (#151).
+- `mcp/agent-delegation-mcp/` — a stdio MCP server for delegating tasks to
+  sub-agents in tmux: `spawn_agent`, `get_agent_status`, `read_agent_output`,
+  `send_agent_message`, `list_agents`, `kill_agent`. Runtime `shell` is
+  first-class; `pi`/`codex`/`claude` are command-generation runtimes.
+- `plugins/agent-delegation/bin/agent-delegate` — a prompt/uuid CLI over the same
+  backend (`spawn → uuid → status → read → send → kill/list`).
+- `skills/agent-delegation/SKILL.md` and `docs/delegation-contract.md`.
 
 ### Removed
-- Cut non-core commands (#151): `board-install`, `board-sync` (pull stays one-directional; status write-back is manual via `gh`), `board-model` registry CRUD (profiles + `board-config --get-profile` cover spawn selection), and `limit-monitor`. ~2.8k lines of code/tests/docs removed.
-- Cut pane/notification machinery (#151): `damage-control` + `coms-net` extensions, `coms-net-server.ts`, and the pane scripts `agent-spawn`/`agent-screen`/`agent-audit`/`agent-notify`/`agent-send`/`agent-kill`, `poll-wait`/`poll-push`, `coms-net-await` — plus their 8 tests.
-- Moved legacy cmux machinery out of the active product into `legacy-reference/`: `cmux-dashboard/` (3×3 grid, `spawn-3x3`, `agent-rotate`, `cmux-dev-grid`), `cmux-agent-workflows-lite/`, and `verify-ts.sh`; rewired the active skills/docs that referenced them (#151). Archived under `legacy-reference/` — kept for reference, not maintained.
+- The entire GitHub-Issues board system: all `board-*` scripts/skills/tests,
+  `board.json`/`TODO.md` rendering, canonical label management, and the
+  one-directional issue → board flow.
+- The orchestrator dispatch/finish/status pipeline, the `orch-statusline`, the
+  `SessionStart` board-summary hook, the OpenCode/Codex plugin variants, and the
+  `legacy-reference/` tree.
 
-## [0.8.0] - 2026-06-13
-
-### Changed
-- Profiles now carry an explicit `role` field selecting the prompt asset, decoupling profile name from `roles/*.md` filename (#138).
-- Refreshed `delegation-policy.md`: 9-profile table with role column; dropped stale budget embargo and dead `models.json` reference (#138).
-
-### Removed
-- Delegation **tiers** (`.models`) and the **model-registry** (`board-model add/edit/delete/asign`, `board-config --get-model`). Profiles (`board-model select --role`, `board-config --get-profile`) are now the single model-config source (#138).
-- Dead `prompts/pi/init.md` prompt asset (never loaded by the spawn path) (#138 follow-up).
-
-## [0.7.1] - 2026-06-13
-
-### Added
-- Unified model hub in `board-model`: `catalog` ingests the live `pi --list-models`
-  catalog (free flag from the `-free` suffix) and `select` lets the user assign a
-  catalog model to a role/tier persisted in `.tasks/config.json`, with guards that
-  block silent paid routing (`--allow-paid`) and Claude frontend routing
-  (`--allow-claude`); `list` annotates free/paid (#134).
-
-### Changed
-- board-config default model map is now free-first: `flash`/`simple` tiers and the
-  `backend-fast`/`repo-scout`/`docs` profiles use free `opencode/*-free` models;
-  `review` uses `deepseek-v4-pro`; the banned `gpt-5.5` is removed from defaults;
-  new `backend-fast`/`repo-scout`/`test`/`tiny-patch` profiles added; frontend
-  Claude profiles marked permission-gated (#131).
-
-## [0.7.0] - 2026-06-13
-
-### Added
-- Balanced grid layout for agent spawning: the orchestrator now selects a target
-  surface explicitly and alternates split direction to build an even grid
-  (approx 2×2 for four workers) instead of repeatedly splitting the focused pane
-  into narrow columns; the orchestrator pane is never subdivided (#97).
-- coms-net event bus for structured Pi worker completion: Bun HTTP/SSE hub
-  (`scripts/coms-net-server.ts`) + Pi extension (`.pi/extensions/coms-net.ts`)
-  that emits a `done` event + orchestrator `coms-net-await.sh` helper, with
-  auth-token/TTL/channel-isolation and git-poll fallback. Ported from
-  disler/pi-vs-claude-code (MIT). Documented in docs/coms-net-design.md (#92).
-- Damage-control safety gate for Pi workers: data-driven `.pi/damage-control-rules.yaml`
-  deny/ask list + `damage-control.ts` Pi extension (ported from disler/pi-vs-claude-code,
-  MIT), loaded for pi workers at spawn. `--force-with-lease` allowed; `--force` denied (#91).
-- Canonical Pi worker prompt layering: universal `prompts/pi/common-system.md`
-  base + tiny per-role assets + shared `init.md`, loaded via
-  `--append-system-prompt` for pi workers, with all task specifics kept in
-  `.task-spec.md`. Absorbs #108. Documented in docs/pi-prompt-layering.md (#118).
-- Pi role profiles (backend/frontend/frontend-top/review/docs): `board-config
-  --get-profile <name>` resolves a profile to `{provider, model, thinking, tools}`
-  and `agent-spawn.sh --profile <name>` launches a Pi worker from it. Profiles are
-  configuration over the Pi runtime; tier/`--model`/`--agent` paths unchanged (#102).
-- `pi` agent-kind: canonical Pi worker launch path (`agent-spawn.sh --agent pi`),
-  with provider/model split, trust pre-seed, and ready/kill patterns. OpenCode and
-  Codex paths kept as fallback (#90).
-- Reusable maximally-detailed `.task-spec.md` template
-  (`skills/cmux-agent-workflows/templates/task-spec.template.md`) with scope,
-  exact file bounds, acceptance, verification, commit/push, contention-guard
-  convention, and forbidden paths, plus a guide in docs/task-spec-template.md (L10).
-- Guardrail tests for Pi extensions: `guardrail-ext-no-external-imports.sh` (rejects
-  any import outside pi's SDK + Node built-ins) and `guardrail-pi-runtime-smoke.sh`
-  (loads every extension in pi, asserts clean startup with no "Cannot find module"
-  errors). These hard-gates prevent regressions like #91 from slipping through CI (#91).
-- `board-install` deploy/update script: installs the plugin into the claude/
-  opencode/codex config dirs with `--target`, a version `--check` against the
-  repo manifest, and a side-effect-free `--dry-run`. Coexists with the #81/#83
-  symlink wiring. Documented in docs/install.md (#86).
-
-### Removed
-- Legacy OpenCode-CLI and Codex-CLI worker launch paths: the worker runtime is
-  now pi-only (`AGENT_KINDS=(pi)`). OpenCode/Codex-backed models still run through
-  pi via the `opencode-go` (and other `provider/model`) provider strings using
-  existing credentials — only the standalone `opencode`/`codex` binary launchers,
-  trust handling, and effort forwarding were removed (#98).
-
-### Fixed
-- Damage-control Pi extension no longer imports the unavailable `yaml` module:
-  rules moved to `.pi/damage-control-rules.json` and parsed with `JSON.parse`,
-  fixing a startup crash ("Cannot find module 'yaml'") that broke pi in every
-  worktree. Rule semantics unchanged (#91).
-- Completion-wait now filters the cmux event stream by worker cwd (no cross-wake
-  between parallel workers) and tears down its event listener without leaking
-  `cmux events` processes (#92).
-
-## [0.6.0] - 2026-06-12
-
-### Added
-- docs: orchestrator token-efficiency diagnostics + benchmark + secret-safe rules (#107).
-- docs: canonical orchestrator token-efficiency policy (budgets, routing, handoff, bounded specs) (#106).
-- docs: Pi CLI usage guide + cmux terminal agent-spawn recipe (docs/pi-cli-usage.md)
-- `pr-finish.sh` now requires explicit user confirmation before merge/close (L5).
-- cmux notify/feed cheat sheet (docs/cmux-cheat-sheet.md) (#82)
-- Install-location-independent `bin/` resolution in `.opencode/plugins/cmux-board.mjs`: priority-ordered lookup via `CMUX_BOARD_HOME` env var → walk-up search for `bin/board-status` → relative fallback (#81).
-
-### Changed
-- Orchestration skills: lite path is now the default; full skill is on-demand (#105).
-- chore: repo hygiene pass (shell-script audit, trailing newlines, exec bits)
-- `.opencode/agent/orchestrator.md` `mode: primary` agent encoding the orchestrator role, board workflow, delegation cycle, and standby rule (#81).
-- Skills discoverability via `skills.paths` in `.opencode/opencode.json`, pointing at the existing `skills/` directory (#81).
-- `tests/test_opencode_bin_resolve.sh` — 6 tests covering CMUX_BOARD_HOME override, walk-up discovery, fallback, and real repo resolution (#81).
-- First-class OpenCode plugin entrypoint (`.opencode/`) exposing `board_status`, `board_next`, `board_sync` as native custom tools plus `shell.env` and `session.idle` hooks (#78).
-- Default `model: opencode-go/deepseek-v4-pro` for the `.opencode/agent/orchestrator.md` agent so it no longer falls back to an unconfigured local provider (#81).
-- `board-model` — project-level provider/model registry and tier assignment manager with four public operations: `asign`, `add`, `edit`, and `delete` (#72).
-- `board-config --get-model <tier> --provider|--effort|--json` — registry-aware model resolution with provider and reasoning-effort flags (#72).
-- `skills/board-model/SKILL.md` — skill definition and user-facing documentation for model/provider management (#72).
-- `test_board_model.sh` — 58 tests covering validation, operations, resolution, persistence, and backward compatibility (#72).
-
-### Fixed
-- SessionStart hook: path-independent board-status resolution, bounded output (#104).
-- OpenCode board tools renamed from dotted (`board.status`/`board.next`/`board.sync`) to underscore (`board_status`/`board_next`/`board_sync`) so providers that enforce the `^[a-zA-Z0-9_-]+$` tool-name pattern (e.g. DeepSeek) accept them instead of erroring on every call (#81).
-- Agent-spawn surface race: parse the authoritative surface ref directly from `cmux new-split` output instead of before/after whole-tree diffing + `sleep 1` + `comm -13`, eliminating a race where two parallel spawns could select the same surface (#77).
-
-### Changed
-- Expanded `.task-spec.md` template with exact paths, verification commands, commit instructions, and scope boundaries (L10).
-- `board-config --get-model` now resolves through the `model-registry` in `.tasks/config.json` when a tier is assigned to a registry entry, falling back to bare model IDs and built-in defaults (#72).
-- `agent-spawn.sh` tier-resolution path now consumes registry provider and reasoning effort from `board-config --get-model <tier> --provider|--effort`, so configured backends and Codex effort affect actual dispatch (#72).
-
-## [0.5.0] - 2026-06-12
-
-### Added
-- Codex plugin adapter (#40).
-- `board-status --json --ready-tasks N` — counts + next-N ready tasks in one compact call so the orchestrator/board-plan skip the full board.json read (#50).
-- cmux-agent-workflows-lite skill — compact delegation reference loaded per session instead of the full ~9.7 KB skill (#49).
-- `--quiet` / `LOG_LEVEL` gate for `lib.sh log()` — background poll/spawn scripts can suppress progress chatter while still emitting their final result line (#51).
-
-### Fixed
-- Agent readiness probe is now reflow-tolerant and quiet — `agent-spawn.sh` no longer emits false 120s timeout warnings in narrow split panes, and per-poll screen output no longer leaks to the caller (#54, closes L5).
-- Codex completion wait now listens to the cmux notification stream even without opencode plugin files, so CTB-DONE wakes the orchestrator before the poll fallback (#71).
-
-### Changed
-- Plugin payload relocated to `plugins/cmux-todo-board/`; Codex marketplace now installs a working plugin (#40).
-- `docs/ORCHESTRATOR.md` symbol-compressed ~20–30% (bullet-dense) with no loss of rules; delegation-cycle anchor preserved (#55).
-- Delegation cycle consolidated into a single canonical `docs/ORCHESTRATOR.md`; board-run-ready and cmux-agent-workflows skills link to it instead of duplicating the steps (#53).
-- Orchestrator no longer reads `TODO.md`; counts/next-ready come from `board-status`. `TODO.md` is still generated as a human reference (#52).
-- **Standby after dispatch** — new canonical rule in `docs/ORCHESTRATOR.md#standby-after-dispatch`: orchestrator must not actively poll the agent pane or type into it after dispatch. Cross-referenced from board-onboard-lite, board-run-ready, cmux-agent-workflows, and codex-port (#70).
-
-## [0.4.1] - 2026-06-11
-
-### Added
-- **#34:** `bin/limit-monitor` — weekly Claude Code limit monitor (parses status-line `rate_limits.seven_day`, persists `.tasks/limit-monitor.json`, WARN/CRIT thresholds with once-per-week dedup, `cmux notify` on CRIT, graceful degrade).
-- **L4:** `skills/cmux-agent-workflows/scripts/agent-audit.sh` — audit open cmux panes, reclaim idle/finished agent surfaces (dry-run default, `--apply`, safety guards).
-
-### Changed
-- Agents now maintain CHANGELOG.md via the task spec; orchestrator no longer hand-edits it (L2).
-
-## [0.4.0] - 2026-06-11
-
-### Added
-- **Event-driven completion wait (#44):** new `poll-wait.sh` — a dual-source
-  waiter that detects agent completion via the `cmux events` stream (agent idle /
-  `CTB-DONE` notify) with `poll-push.sh` demoted to a fallback (bash-native
-  watchdog, no GNU `timeout` dependency). Graceful degradation to poll-only when
-  the cmux hooks plugin is absent.
-- `board-release` — stack-agnostic SemVer release helper with safety gates (#28).
-
-### Changed
-- **Token-efficiency pass (#42):** 7 changes cutting recurring token overhead
-  across board commands and agent dispatch.
-  - `board-pull`: removed `body` from default `--json` fields; added `--with-body` flag.
-  - `board-render`: only materialises full body `.md` for `ready` status; writes
-    `body_preview` (200 chars) + `body_sha` into `board.json` for all issues.
-  - `board-render-body <N>`: new command for on-demand full-body retrieval.
-  - `board-onboard-lite`: compact orchestrator bootstrap SKILL.md; full rules
-    moved to `docs/ORCHESTRATOR.md`.
-  - `board-plan`: cap mirrored ready tasks at 5 with `… and N more` summary line.
-  - `board-run-ready`: dispatch generates compact `.task-spec.md` inside agent worktree
-    instead of bare URL.
-  - Agent guard: `.task-spec.md` includes `forbidden_reads` forbidding glob-read of
-    `.tasks/issues/*`.
-
-### Fixed
-- `agent-notify.sh`: emit structured `cmux notify --title/--body/--surface`
-  instead of a bare positional payload (#44).
-
-### Docs
-- `docs/research/cmux-notify-feed-orchestrator.md` — design for event-driven
-  completion wait (L1 research, #45).
-
-## [0.3.0] - 2026-06-09
-
-### Added
-- `board-sync` — write a single issue's status back to GitHub labels,
-  making the board bidirectional (#5).
-- `board-add --set <id> --status <status>` — update an existing local task's
-  status atomically (#16).
-
-### Docs
-- Delegation model policy documented in `docs/delegation-policy.md` (#26).
-- Dispatch/spec files must live inside the agent worktree, not `/tmp` (#20).
-- Agent completion notification flow documented in
-  `docs/agent-notifications.md` (#21).
-- Explicit orchestrator delegation rule in `board-onboard` (#22).
-
-## [0.2.0] - earlier
-
-### Changed
-- Bumped version so `/plugin marketplace update` re-installs the cache copy.
+[1.0.0]: https://github.com/Kaiukov/claude-code-cmux-todo-plugin/releases/tag/v1.0.0

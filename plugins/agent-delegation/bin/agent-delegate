@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+agent-delegate spawn --runtime <runtime> [--provider <provider>] [--model <model>] [--thinking <thinking>] --cwd <dir> [--worktree] (--prompt <text> | --prompt-file <path>) [--harness <value>]...
+agent-delegate status <uuid>
+agent-delegate read <uuid> [--lines <n>]
+agent-delegate send <uuid> <message>
+agent-delegate kill <uuid> [--reason <text>]
+agent-delegate list
+EOF
+}
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+plugin_dir="$(cd "$script_dir/.." && pwd)"
+repo_root="$(cd "$plugin_dir/../.." && pwd)"
+mcp_src="$repo_root/mcp/agent-delegation-mcp/src"
+state_dir="${ADM_STATE_DIR:-$HOME/.agent-delegation-mcp/state}"
+
+pick_python() {
+  local candidate="$HOME/.agent-delegation-mcp/venv/bin/python"
+  if [[ -x "$candidate" ]]; then
+    if PYTHONPATH="$mcp_src${PYTHONPATH:+:$PYTHONPATH}" "$candidate" -c 'import agent_delegation_mcp' >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    if PYTHONPATH="$mcp_src${PYTHONPATH:+:$PYTHONPATH}" python3 -c 'import agent_delegation_mcp' >/dev/null 2>&1; then
+      printf '%s\n' "$(command -v python3)"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+python_bin="$(pick_python)" || {
+  printf 'agent-delegate: no python found that can import agent_delegation_mcp\n' >&2
+  exit 1
+}
+
+PYTHONPATH="$mcp_src${PYTHONPATH:+:$PYTHONPATH}" \
+"$python_bin" - "$state_dir" "$@" <<'PY'
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from agent_delegation_mcp.backend import AgentBackend
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="agent-delegate")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    spawn = subparsers.add_parser("spawn")
+    spawn.add_argument("--runtime", required=True)
+    spawn.add_argument("--provider")
+    spawn.add_argument("--model")
+    spawn.add_argument("--thinking")
+    spawn.add_argument("--cwd", required=True)
+    spawn.add_argument("--worktree", action="store_true")
+    spawn.add_argument("--prompt")
+    spawn.add_argument("--prompt-file")
+    spawn.add_argument("--harness", action="append", default=[])
+
+    status = subparsers.add_parser("status")
+    status.add_argument("uuid")
+
+    read = subparsers.add_parser("read")
+    read.add_argument("uuid")
+    read.add_argument("--lines", type=int, default=80)
+
+    send = subparsers.add_parser("send")
+    send.add_argument("uuid")
+    send.add_argument("message")
+
+    kill = subparsers.add_parser("kill")
+    kill.add_argument("uuid")
+    kill.add_argument("--reason")
+
+    subparsers.add_parser("list")
+    return parser
+
+
+def print_json(payload: object) -> None:
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2:
+        build_parser().print_usage(sys.stderr)
+        return 2
+
+    state_dir = Path(argv[0])
+    parser = build_parser()
+    args = parser.parse_args(argv[1:])
+    backend = AgentBackend(state_dir)
+
+    if args.command == "spawn":
+        if bool(args.prompt) == bool(args.prompt_file):
+            parser.error("spawn requires exactly one of --prompt or --prompt-file")
+        prompt = args.prompt
+        if args.prompt_file:
+            prompt = Path(args.prompt_file).read_text()
+        record = backend.spawn_agent(
+            runtime=args.runtime,
+            prompt=prompt,
+            cwd=args.cwd,
+            worktree=args.worktree,
+            provider=args.provider,
+            model=args.model,
+            thinking=args.thinking,
+            harnesses=args.harness or None,
+        )
+        print(record["uuid"])
+        print_json(record)
+        return 0
+
+    if args.command == "status":
+        print_json(backend.get_agent_status(args.uuid))
+        return 0
+
+    if args.command == "read":
+        print_json(backend.read_agent_output(args.uuid, lines=args.lines))
+        return 0
+
+    if args.command == "send":
+        print_json(backend.send_agent_message(args.uuid, args.message))
+        return 0
+
+    if args.command == "kill":
+        print_json(backend.kill_agent(args.uuid, reason=args.reason))
+        return 0
+
+    if args.command == "list":
+        print_json(backend.list_agents())
+        return 0
+
+    parser.print_usage(sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
+PY
