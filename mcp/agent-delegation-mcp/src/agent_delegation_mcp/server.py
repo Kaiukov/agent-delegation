@@ -9,7 +9,7 @@ from .backend import AgentBackend
 
 
 mcp = FastMCP("agent-delegation-mcp")
-_state_dir = Path(os.environ.get("ADM_STATE_DIR", Path.home() / ".agent-delegation-mcp"))
+_state_dir = Path(os.environ.get("ADM_STATE_DIR", Path.home() / ".agent-delegation-mcp" / "state"))
 _backend = AgentBackend(_state_dir)
 
 
@@ -24,7 +24,7 @@ def spawn_agent(
     thinking: str | None = None,
     harnesses: list[str] | None = None,
     env: dict[str, str] | None = None,
-    timeout_sec: int = 30,
+    timeout_sec: int = 0,
 ) -> dict:
     return _backend.spawn_agent(
         runtime,

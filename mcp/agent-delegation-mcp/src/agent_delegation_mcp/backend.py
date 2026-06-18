@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import time
-import uuid as uuidlib
-from typing import Any
 import shlex
+import uuid as uuidlib
+from pathlib import Path
 
 from . import runtime as runtime_module
 from .models import AgentRecord
@@ -18,9 +17,11 @@ class AgentBackend:
     def __init__(self, state_dir: Path):
         self.state_dir = state_dir
         self.agents_dir = self.state_dir / "agents"
+        self.exits_dir = self.state_dir / "exits"
         self.logs_dir = self.state_dir / "logs"
         self.worktrees_dir = self.state_dir / "worktrees"
         self.agents_dir.mkdir(parents=True, exist_ok=True)
+        self.exits_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
 
@@ -87,9 +88,9 @@ class AgentBackend:
         provider: str | None = None,
         model: str | None = None,
         thinking: str | None = None,
-        harnesses: Any = None,
+        harnesses: list[str] | None = None,
         env: dict[str, str] | None = None,
-        timeout_sec: int = 30,
+        timeout_sec: int = 0,
     ) -> dict:
         if not self._tmux_available():
             raise RuntimeError("tmux not found")
@@ -112,15 +113,50 @@ class AgentBackend:
             provider=provider,
             model=model,
             thinking=thinking,
-            harnesses=harnesses,
         )
         command = shlex.join(argv)
         script_path = self.state_dir / "launchers" / f"{agent_uuid}.sh"
         script_path.parent.mkdir(parents=True, exist_ok=True)
+        exit_marker = self.exits_dir / f"{agent_uuid}.exit"
+        script_lines = [
+            "#!/usr/bin/env bash",
+            "set -uo pipefail",
+            f"TIMEOUT={timeout_sec}",
+            "ec=0",
+        ]
+        if timeout_sec > 0:
+            script_lines.extend(
+                [
+                    f"{command} & __p=$!",
+                    ' ( sleep "$TIMEOUT"; kill -TERM "$__p" 2>/dev/null ) & __w=$!',
+                    ' wait "$__p"',
+                    "ec=$?",
+                    ' kill "$__w" 2>/dev/null || true',
+                ]
+            )
+        else:
+            script_lines.extend(
+                [
+                    command,
+                    "ec=$?",
+                ]
+            )
+        for harness in harnesses or []:
+            script_lines.extend(
+                [
+                    f"eval {shlex.quote(harness)}",
+                    "hc=$?",
+                    ' [ "$hc" -ne 0 ] && ec="$hc"',
+                ]
+            )
+        script_lines.extend(
+            [
+                f"printf '%s' \"$ec\" > {shlex.quote(str(exit_marker))}",
+                'exit "$ec"',
+            ]
+        )
         script_path.write_text(
-            "#!/usr/bin/env bash\n"
-            "set -euo pipefail\n"
-            f"exec {command}\n"
+            "\n".join(script_lines) + "\n"
         )
         script_path.chmod(0o755)
 
@@ -130,7 +166,7 @@ class AgentBackend:
 
         self._tmux("new-session", "-d", "-s", session, "-c", workdir, env=proc_env)
         self._tmux("pipe-pane", "-o", "-t", session, f"cat >> {shlex.quote(str(log_file))}", env=proc_env)
-        self._tmux("send-keys", "-t", session, str(script_path), "Enter", env=proc_env)
+        self._tmux("send-keys", "-t", session, "exec " + shlex.quote(str(script_path)), "Enter", env=proc_env)
 
         record = AgentRecord(
             uuid=agent_uuid,
@@ -144,6 +180,7 @@ class AgentBackend:
             created_at=time.time(),
             pid=None,
             command=command,
+            exit_code=None,
             reason=None,
         )
         self._save_record(record)
@@ -151,6 +188,25 @@ class AgentBackend:
 
     def get_agent_status(self, uuid: str) -> dict:
         record = self._load_record(uuid)
+        if record.status == "killed":
+            payload = record.to_dict()
+            payload["alive"] = False
+            return payload
+
+        exit_marker = self.exits_dir / f"{uuid}.exit"
+        if exit_marker.exists():
+            try:
+                exit_code = int(exit_marker.read_text().strip() or "0")
+            except ValueError:
+                exit_code = None
+            if exit_code is not None:
+                record.exit_code = exit_code
+                record.status = "done" if exit_code == 0 else "failed"
+                self._save_record(record)
+                payload = record.to_dict()
+                payload["alive"] = False
+                return payload
+
         result = self._tmux("has-session", "-t", record.session, check=False)
         alive = result.returncode == 0
         if not alive and record.status == "running":

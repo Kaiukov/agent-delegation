@@ -20,6 +20,7 @@ class AgentRecord:
     created_at: float = field(default_factory=time.time)
     pid: int | None = None
     command: str = ""
+    exit_code: int | None = None
     reason: str | None = None
 
     def to_dict(self) -> dict:
@@ -35,6 +36,7 @@ class AgentRecord:
             "created_at": self.created_at,
             "pid": self.pid,
             "command": self.command,
+            "exit_code": self.exit_code,
             "reason": self.reason,
         }
 
@@ -52,5 +54,6 @@ class AgentRecord:
             created_at=float(data.get("created_at", time.time())),
             pid=data.get("pid"),
             command=data.get("command", ""),
+            exit_code=data.get("exit_code"),
             reason=data.get("reason"),
         )
