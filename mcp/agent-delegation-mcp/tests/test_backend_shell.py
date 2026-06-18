@@ -71,6 +71,9 @@ def test_completed_shell_command_becomes_done(tmp_path: Path):
     status = _poll_status(backend, agent_uuid, time.time() + 8)
     assert status["status"] == "done"
     assert status["exit_code"] == 0
+    assert status["completed_at"] is not None
+    assert isinstance(status["duration_sec"], (int, float))
+    assert status["duration_sec"] >= 0
 
 
 def test_failed_shell_command_becomes_failed(tmp_path: Path):
