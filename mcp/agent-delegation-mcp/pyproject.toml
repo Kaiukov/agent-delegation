@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-delegation-mcp"
-version = "0.1.0"
+version = "1.0.1"
 requires-python = ">=3.11"
 dependencies = [
-  "mcp>=1.2.0",
+  "mcp>=1.27,<2",
 ]
 
 [project.optional-dependencies]

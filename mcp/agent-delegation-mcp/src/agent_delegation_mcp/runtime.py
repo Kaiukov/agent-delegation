@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 
 def build_command(
     runtime: str,
@@ -10,7 +8,6 @@ def build_command(
     provider: str | None = None,
     model: str | None = None,
     thinking: str | None = None,
-    harnesses: Any = None,
 ) -> list[str]:
     if runtime == "shell":
         return ["bash", "-lc", prompt]

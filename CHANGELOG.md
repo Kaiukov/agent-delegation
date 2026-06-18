@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-06-18
+
+### Changed
+- Unified the MCP and CLI default state directory at `~/.agent-delegation-mcp/state`.
+- Shell runtime now records real terminal completion as `done` and non-zero exits as `failed` via exit-code markers.
+- Implemented the shell harnesses needed by the delegation flow.
+- Kept `timeout_sec` defaulted to `0`, disabling timeouts unless explicitly requested.
+- Pinned the MCP dependency to `mcp>=1.27,<2`.
+- Synced package and plugin versions to `1.0.1`.
+
 ## [1.0.0] - 2026-06-18
 
 ### Changed (BREAKING)
