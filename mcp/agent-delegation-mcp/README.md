@@ -5,7 +5,7 @@ Minimal MCP server for delegating work to sub-agents running in `tmux`.
 ## What it is
 
 This package exposes a small MCP surface for spawning, tracking, messaging, and killing delegated agents.
-It is intentionally narrow: no task boards, no GitHub sync, no scheduler, and no PR automation.
+It is intentionally narrow: no issue tracker sync, no scheduler, and no PR automation.
 
 ## Requirements
 

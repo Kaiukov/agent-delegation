@@ -5,10 +5,10 @@
   },
   "plugins": [
     {
-      "name": "cmux-todo-board",
+      "name": "agent-delegation",
       "source": {
         "source": "local",
-        "path": "./plugins/cmux-todo-board"
+        "path": "./plugins/agent-delegation"
       },
       "policy": {
         "installation": "AVAILABLE",
