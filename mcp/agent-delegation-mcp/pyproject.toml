@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-delegation-mcp"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=1.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+
+[project.scripts]
+agent-delegation-mcp = "agent_delegation_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_delegation_mcp"]
