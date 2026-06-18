@@ -1,48 +1,73 @@
 # agent-delegation
 
-Minimal MCP + CLI sub-agent delegation over `tmux`.
+[![skills.sh](https://skills.sh/b/Kaiukov/agent-delegation)](https://skills.sh/Kaiukov/agent-delegation)
+
+Minimal, local sub-agent delegation over `tmux`.
+
+**agent-delegation is now skill-first.** The portable layer is the skill at
+[`skills/agent-delegation/SKILL.md`](skills/agent-delegation/SKILL.md) — it is the
+single source of truth and is usable by any coding agent, with or without Claude.
+The CLI (`agent-delegate`) and the MCP server (`agent-delegation-mcp`) are local
+execution backends. The Claude plugin wrapper under `plugins/agent-delegation/`
+is optional compatibility.
+
+```text
+skills/agent-delegation/SKILL.md   ← portable instructions (source of truth)
+        ↓
+agent-delegate CLI  /  MCP tools   ← local execution backends
+        ↓
+tmux session
+        ↓
+shell / claude / codex / pi
+```
 
 ## What it is
 
-`agent-delegation` keeps the control surface intentionally small:
-
 - lifecycle: `spawn → uuid → status → read → send → kill/list`
-- runtimes: `shell`, `pi`, `codex`, `claude`
-- `shell` is the direct command runner
-- the other runtimes generate a command line for the launched session
-- worktree mode isolates a run in its own git worktree
+- runtimes: `shell`, `claude`, `codex`, `pi`
+- `shell` runs the prompt directly; the others build a command line for the
+  matching agent CLI
+- optional worktree mode isolates a run in its own git worktree
+- optional harnesses (trusted local shell commands) gate the final status
+- optional timeout terminates a run's process group
 
 ## Requirements
 
 - Python 3.11+
 - `tmux`
-- optional: `pi`, `codex`, and `claude` CLIs for those runtimes
+- optional: `claude`, `codex`, and `pi` CLIs for those runtimes
 
-## Install
+## Install as a skill
+
+```bash
+npx skills add Kaiukov/agent-delegation
+```
+
+Installing the skill does **not** install the local Python backend. The skill is
+the portable instruction layer only.
+
+## Install the backend
 
 ```bash
 pip install -e mcp/agent-delegation-mcp
-pip install -e "mcp/agent-delegation-mcp[dev]"
+pip install -e "mcp/agent-delegation-mcp[dev]"   # for tests
 ```
 
-## MCP config
+## Use as a skill (recommended)
 
-Claude Code `.mcp.json` example:
+The skill is portable. Point your agent at it:
 
-```json
-{
-  "mcpServers": {
-    "agent-delegation-mcp": {
-      "command": "~/.agent-delegation-mcp/venv/bin/agent-delegation-mcp",
-      "env": {
-        "ADM_STATE_DIR": "~/.agent-delegation-mcp/state"
-      }
-    }
-  }
-}
-```
+- **Claude Code:** symlink it in —
+  `ln -s "$PWD/skills/agent-delegation" ~/.claude/skills/agent-delegation`
+- **Codex CLI:** reference `skills/agent-delegation/SKILL.md` in your project /
+  prompt context.
+- **Hermes / generic agents:** load `SKILL.md` as instructions and let the agent
+  call the CLI or MCP tools.
 
-## CLI usage
+See [`docs/compatibility.md`](docs/compatibility.md) and `examples/skill-use-*.md`
+for per-agent walkthroughs.
+
+## Use the CLI
 
 ```bash
 agent-delegate spawn --runtime shell --cwd /tmp --prompt 'echo hello'
@@ -53,6 +78,34 @@ agent-delegate kill <uuid>
 agent-delegate list
 agent-delegate cleanup-worktree <uuid>
 ```
+
+## Use the MCP server
+
+Register it in an MCP client (Claude Code `.mcp.json` example):
+
+```json
+{
+  "mcpServers": {
+    "agent-delegation": {
+      "command": "~/.agent-delegation-mcp/venv/bin/agent-delegation-mcp",
+      "env": { "ADM_STATE_DIR": "~/.agent-delegation-mcp/state" }
+    }
+  }
+}
+```
+
+Tools: `spawn_agent`, `get_agent_status`, `read_agent_output`,
+`send_agent_message`, `kill_agent`, `list_agents`, `cleanup_worktree`. CLI and MCP
+share one backend and state directory.
+
+## Compatibility
+
+| Agent         | Load the skill | Execute |
+| ------------- | -------------- | ------- |
+| Claude Code   | symlink into `.claude/skills/` | MCP tools or CLI |
+| Codex CLI     | reference `SKILL.md` in context | CLI |
+| Hermes        | load `SKILL.md` as instructions | CLI or MCP |
+| Generic agent | read `SKILL.md` before delegating | CLI or MCP |
 
 ## Shell smoke test
 
@@ -69,8 +122,6 @@ agent-delegate read "$uuid"
 agent-delegate kill "$uuid"
 ```
 
-## Optional real runtime tests
-
 `pytest` includes optional `claude`, `codex`, and `pi` integration tests that skip
 automatically when the matching CLI is not installed.
 
@@ -82,10 +133,8 @@ automatically when the matching CLI is not installed.
 | `done` | The main command completed successfully. |
 | `failed` | The main command or a harness failed. |
 | `timeout` | The process group exceeded `timeout_sec` and was terminated. |
-| `killed` | The session was stopped explicitly. |
-| `exited` | The tmux session ended without a normal agent completion record. |
-
-Related fields:
+| `killed` | The agent was stopped by an explicit kill. |
+| `exited` | The session ended without an exit marker. |
 
 - `exit_code` records the main command exit status when available.
 - `completed_at` stores the completion timestamp.
@@ -118,12 +167,18 @@ mainly useful for interactive `claude`, `codex`, and `pi` runs. If the session i
 gone, it returns `{sent:false, reason:"session not found"}`. `shell` runs usually
 exit after the command finishes.
 
+## Scope: no board, no GitHub sync, no PR automation
+
+This is a local delegation tool only. It does **not** include a board, GitHub
+issue sync, labels, or PR/merge automation. Dispatch is prompt-based; agents
+commit locally and humans own the merge.
+
 ## Known limitations
 
 - Local-only delegation, with no remote or multi-machine coordination.
 - No scheduler or remote issue workflow.
 - `shell` is the only runtime that executes the prompt directly.
-- `pi`, `codex`, and `claude` require their CLIs to be installed locally.
+- `claude`, `codex`, and `pi` require their CLIs to be installed locally.
 
 ## Security notes
 

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agent-delegation": {
+      "type": "stdio",
+      "command": "/Users/oleksandrkaiukov/.agent-delegation-mcp/venv/bin/agent-delegation-mcp",
+      "args": [],
+      "env": {
+        "ADM_STATE_DIR": "/Users/oleksandrkaiukov/.agent-delegation-mcp/state"
+      }
+    }
+  }
+}

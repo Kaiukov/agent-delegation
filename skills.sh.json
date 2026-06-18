@@ -1,0 +1,13 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "Agent Workflows",
+      "description": "Local tmux-based sub-agent delegation for coding agents.",
+      "skills": [
+        "agent-delegation"
+      ]
+    }
+  ]
+}
