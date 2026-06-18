@@ -9,7 +9,12 @@ def test_agent_record_round_trip_and_defaults():
         cwd="/tmp",
         session="adm-abc123",
         log_file="/tmp/abc123.log",
+        completed_at=123.456,
+        duration_sec=0.789,
     )
 
     assert record.status == "running"
-    assert AgentRecord.from_dict(record.to_dict()) == record
+    payload = record.to_dict()
+    assert payload["completed_at"] == 123.456
+    assert payload["duration_sec"] == 0.789
+    assert AgentRecord.from_dict(payload) == record

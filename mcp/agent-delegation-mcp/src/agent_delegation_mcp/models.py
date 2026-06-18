@@ -18,6 +18,8 @@ class AgentRecord:
     worktree: str | None = None
     status: str = "running"
     created_at: float = field(default_factory=time.time)
+    completed_at: float | None = None
+    duration_sec: float | None = None
     pid: int | None = None
     command: str = ""
     exit_code: int | None = None
@@ -34,6 +36,8 @@ class AgentRecord:
             "worktree": self.worktree,
             "status": self.status,
             "created_at": self.created_at,
+            "completed_at": self.completed_at,
+            "duration_sec": self.duration_sec,
             "pid": self.pid,
             "command": self.command,
             "exit_code": self.exit_code,
@@ -52,6 +56,8 @@ class AgentRecord:
             worktree=data.get("worktree"),
             status=data.get("status", "running"),
             created_at=float(data.get("created_at", time.time())),
+            completed_at=data.get("completed_at"),
+            duration_sec=data.get("duration_sec"),
             pid=data.get("pid"),
             command=data.get("command", ""),
             exit_code=data.get("exit_code"),

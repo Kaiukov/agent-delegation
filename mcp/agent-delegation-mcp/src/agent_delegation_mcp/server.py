@@ -65,6 +65,11 @@ def kill_agent(uuid: str, reason: str | None = None) -> dict:
     return _backend.kill_agent(uuid, reason=reason)
 
 
+@mcp.tool()
+def cleanup_worktree(uuid: str, force: bool = False) -> dict:
+    return _backend.cleanup_worktree(uuid, force=force)
+
+
 def main() -> None:
     mcp.run()
 

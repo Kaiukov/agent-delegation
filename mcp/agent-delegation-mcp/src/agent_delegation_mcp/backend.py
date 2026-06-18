@@ -40,6 +40,25 @@ class AgentBackend:
     def _save_record(self, record: AgentRecord) -> None:
         self._agent_path(record.uuid).write_text(json.dumps(record.to_dict(), indent=2, sort_keys=True))
 
+    def _finalize_record(
+        self,
+        record: AgentRecord,
+        status: str,
+        *,
+        exit_code: int | None = None,
+        reason: str | None = None,
+    ) -> AgentRecord:
+        record.status = status
+        if exit_code is not None:
+            record.exit_code = exit_code
+        if reason is not None:
+            record.reason = reason
+        if record.completed_at is None:
+            record.completed_at = time.time()
+            record.duration_sec = round(record.completed_at - record.created_at, 3)
+        self._save_record(record)
+        return record
+
     def _tmux_available(self) -> bool:
         return shutil.which("tmux") is not None
 
@@ -118,35 +137,35 @@ class AgentBackend:
         script_path = self.state_dir / "launchers" / f"{agent_uuid}.sh"
         script_path.parent.mkdir(parents=True, exist_ok=True)
         exit_marker = self.exits_dir / f"{agent_uuid}.exit"
+        timeout_marker = self.exits_dir / f"{agent_uuid}.timeout"
         script_lines = [
             "#!/usr/bin/env bash",
             "set -uo pipefail",
+            "set -m",
             f"TIMEOUT={timeout_sec}",
             "ec=0",
+            f"run_main() {{ {command}; }}",
+            'if [ "$TIMEOUT" -gt 0 ]; then',
+            '  run_main & __p=$!',
+            '  ( sleep "$TIMEOUT"',
+            f'    if kill -0 "$__p" 2>/dev/null; then',
+            f"      printf '%s' \"$TIMEOUT\" > {shlex.quote(str(timeout_marker))}",
+            '      kill -TERM -"$__p" 2>/dev/null',
+            "      sleep 2",
+            '      kill -KILL -"$__p" 2>/dev/null',
+            '    fi ) & __w=$!',
+            '  wait "$__p"; ec=$?',
+            '  kill "$__w" 2>/dev/null || true',
+            "else",
+            "  run_main; ec=$?",
+            "fi",
         ]
-        if timeout_sec > 0:
+        for i, harness in enumerate(harnesses or [], start=1):
             script_lines.extend(
                 [
-                    f"{command} & __p=$!",
-                    ' ( sleep "$TIMEOUT"; kill -TERM "$__p" 2>/dev/null ) & __w=$!',
-                    ' wait "$__p"',
-                    "ec=$?",
-                    ' kill "$__w" 2>/dev/null || true',
-                ]
-            )
-        else:
-            script_lines.extend(
-                [
-                    command,
-                    "ec=$?",
-                ]
-            )
-        for harness in harnesses or []:
-            script_lines.extend(
-                [
-                    f"eval {shlex.quote(harness)}",
-                    "hc=$?",
-                    ' [ "$hc" -ne 0 ] && ec="$hc"',
+                    f'echo "[harness {i}] {harness}"',
+                    f'eval {shlex.quote(harness)}; hc=$?',
+                    f'if [ "$hc" -ne 0 ]; then echo "[harness {i} FAILED rc=$hc]"; ec="$hc"; fi',
                 ]
             )
         script_lines.extend(
@@ -178,6 +197,8 @@ class AgentBackend:
             worktree=worktree_path,
             status="running",
             created_at=time.time(),
+            completed_at=None,
+            duration_sec=None,
             pid=None,
             command=command,
             exit_code=None,
@@ -188,32 +209,59 @@ class AgentBackend:
 
     def get_agent_status(self, uuid: str) -> dict:
         record = self._load_record(uuid)
-        if record.status == "killed":
+        if record.status in {"killed", "done", "failed", "timeout", "exited"}:
             payload = record.to_dict()
             payload["alive"] = False
             return payload
 
+        timeout_marker = self.exits_dir / f"{uuid}.timeout"
         exit_marker = self.exits_dir / f"{uuid}.exit"
+
+        if timeout_marker.exists():
+            try:
+                timeout_sec = int(timeout_marker.read_text().strip() or "0")
+            except ValueError:
+                timeout_sec = 0
+            exit_code = None
+            if exit_marker.exists():
+                try:
+                    exit_code = int(exit_marker.read_text().strip() or "0")
+                except ValueError:
+                    exit_code = None
+            finalized = self._finalize_record(
+                record,
+                "timeout",
+                exit_code=exit_code,
+                reason=f"timeout after {timeout_sec}s",
+            )
+            payload = finalized.to_dict()
+            payload["alive"] = False
+            return payload
+
         if exit_marker.exists():
             try:
                 exit_code = int(exit_marker.read_text().strip() or "0")
             except ValueError:
                 exit_code = None
             if exit_code is not None:
-                record.exit_code = exit_code
-                record.status = "done" if exit_code == 0 else "failed"
-                self._save_record(record)
-                payload = record.to_dict()
+                finalized = self._finalize_record(
+                    record,
+                    "done" if exit_code == 0 else "failed",
+                    exit_code=exit_code,
+                )
+                payload = finalized.to_dict()
                 payload["alive"] = False
                 return payload
 
         result = self._tmux("has-session", "-t", record.session, check=False)
-        alive = result.returncode == 0
-        if not alive and record.status == "running":
-            record.status = "exited"
-            self._save_record(record)
-        payload = record.to_dict()
-        payload["alive"] = alive
+        if result.returncode == 0:
+            payload = record.to_dict()
+            payload["alive"] = True
+            return payload
+
+        finalized = self._finalize_record(record, "exited")
+        payload = finalized.to_dict()
+        payload["alive"] = False
         return payload
 
     def read_agent_output(self, uuid: str, lines: int = 80) -> dict:
@@ -237,11 +285,27 @@ class AgentBackend:
 
     def kill_agent(self, uuid: str, reason: str | None = None) -> dict:
         record = self._load_record(uuid)
-        result = self._tmux("kill-session", "-t", record.session, check=False)
-        record.status = "killed"
-        record.reason = reason
-        self._save_record(record)
-        return record.to_dict()
+        self._tmux("kill-session", "-t", record.session, check=False)
+        finalized = self._finalize_record(record, "killed", reason=reason)
+        return finalized.to_dict()
+
+    def cleanup_worktree(self, uuid: str, force: bool = False) -> dict:
+        record = self._load_record(uuid)
+        if not record.worktree:
+            return {"uuid": uuid, "cleaned": False, "reason": "no worktree"}
+
+        worktree_path = Path(record.worktree)
+        if not worktree_path.exists():
+            return {"uuid": uuid, "cleaned": False, "reason": "worktree path missing"}
+
+        cmd = ["git", "-C", record.cwd, "worktree", "remove"]
+        if force:
+            cmd.append("--force")
+        cmd.append(str(worktree_path))
+        result = subprocess.run(cmd, text=True, capture_output=True)
+        if result.returncode != 0:
+            return {"uuid": uuid, "cleaned": False, "reason": result.stderr.strip()}
+        return {"uuid": uuid, "cleaned": True, "worktree": str(worktree_path)}
 
     def list_agents(self) -> dict:
         agents = []

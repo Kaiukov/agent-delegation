@@ -1,0 +1,1 @@
+{"runtime":"shell","prompt":"echo hello","cwd":"/tmp","harnesses":["test -f /tmp/x","echo checked"]}
